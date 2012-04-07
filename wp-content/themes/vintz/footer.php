@@ -24,7 +24,7 @@
 	</div>
 		
 	<footer id="footer">	
-		&copy;<?php echo date ('Y'); ?> <?php bloginfo('name'); ?>
+		&copy;<?php echo date ('Y'); ?> <?php bloginfo('name'); ?> | <a href="<?php bloginfo('url'); ?>/privacy-policy">Privacy Policy</a> | <a href="<?php bloginfo('url'); ?>/terms-conditions">Terms &amp; Conditions</a> | <a href="<?php bloginfo('url'); ?>/shipping-returns-policy">Shipping &amp; Returns</a>
 	</footer>
 	<?php wp_footer(); ?>
 </body>

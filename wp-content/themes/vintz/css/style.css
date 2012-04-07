@@ -541,3 +541,51 @@ p.footnote {
   padding-top: 0.5em;
 }
 #shopp.list ul.products li.product { border-bottom: 1px solid #ed1c24 !important; }
+form input[type="text"] {
+  background-color: #fdb602;
+  color: #1f81aa;
+  font-weight: bold;
+  font-size: 16px;
+  padding: 0 3px;
+  border: 2px solid #f2682c;
+  -webkit-border-radius: 5px;
+  -moz-border-radius: 5px;
+  border-radius: 5px;
+}
+form select {
+  background-color: #fdb602;
+  color: #1f81aa;
+  font-weight: bold;
+  font-size: 16px;
+  padding: 0 3px;
+  border: 2px solid #f2682c;
+  -webkit-border-radius: 5px;
+  -moz-border-radius: 5px;
+  border-radius: 5px;
+}
+form textarea {
+  background-color: #fdb602;
+  color: #1f81aa;
+  font-weight: bold;
+  font-size: 16px;
+  padding: 0 3px;
+  border: 2px solid #f2682c;
+  -webkit-border-radius: 5px;
+  -moz-border-radius: 5px;
+  border-radius: 5px;
+}
+form input[type="text"] { height: 30px; }
+form select { height: 34px; }
+form textarea { font-family: Arial, sans-serif; }
+form input[type="submit"] {
+  height: 35px;
+  font-size: 16px;
+  background-color: #96d321;
+  color: #333333;
+  font-family: 'ChunkFiveRegular';
+  border: 2px solid #f2682c;
+  -webkit-border-radius: 5px;
+  -moz-border-radius: 5px;
+  border-radius: 5px;
+}
+#shopp form ul { padding-right: 10px !important; }

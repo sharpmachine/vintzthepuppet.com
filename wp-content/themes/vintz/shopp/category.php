@@ -1,7 +1,7 @@
 <?php if(shopp('category','hasproducts','load=coverimages')): ?>
 	<div class="category">
 	<!--<h3><?php shopp('category','name'); ?></h3>-->
-	<?php shopp('catalog','views','label=Views: '); ?>
+	<?php shopp('catalog','views','label=Views: '); ?><br \>
 
 	<!--<div><?php shopp('category','subcategory-list','hierarchy=true&showall=true&class=subcategories&dropdown=1'); ?></div>
 

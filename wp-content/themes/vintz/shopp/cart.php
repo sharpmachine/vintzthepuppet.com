@@ -1,9 +1,5 @@
 <?php if (shopp('cart','hasitems')): ?>
 <form id="cart" action="<?php shopp('cart','url'); ?>" method="post">
-<big>
-	<a href="<?php shopp('cart','referrer'); ?>">&laquo; Continue Shopping</a>
-	<a href="<?php shopp('checkout','url'); ?>" class="right">Proceed to Checkout &raquo;</a>
-</big>
 
 <?php shopp('cart','function'); ?>
 <table class="cart">
@@ -22,8 +18,7 @@
 				<?php shopp('cartitem','addons-list'); ?>
 				<?php shopp('cartitem','inputs-list'); ?>
 			</td>
-			<td><?php shopp('cartitem','quantity','input=text'); ?>
-				<?php shopp('cartitem','remove','input=button'); ?></td>
+			<td><?php shopp('cartitem','quantity','input=text'); ?><?php shopp('cartitem','remove'); ?></td>
 			<td class="money"><?php shopp('cartitem','unitprice'); ?></td>
 			<td class="money"><?php shopp('cartitem','total'); ?></td>
 		</tr>

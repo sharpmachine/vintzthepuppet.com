@@ -794,3 +794,54 @@ p.footnote {
 border-bottom: 1px solid @red !important;
 }
 
+.rounded-corners(@radius:5px)
+{
+	-webkit-border-radius: @radius;
+	-moz-border-radius: @radius;
+	border-radius: @radius;
+}
+
+form
+{
+	input[type="text"], select, textarea
+	{
+		background-color: @burnt-yellow;
+		color: @dark-blue;
+		font-weight: bold;
+		font-size: 16px;
+		padding: 0 3px;
+		border: 2px solid @orange;
+		.rounded-corners;
+	}
+	
+	input[type="text"]
+	{
+		height: 30px;
+	}
+	
+	select
+	{
+		height: 34px;
+	}
+	
+	textarea
+	{
+		font-family: Arial, sans-serif;
+	}
+	
+	input[type="submit"]
+	{
+		height: 35px;
+		font-size: 16px;
+		background-color: #96D321;
+		color: #333;
+		font-family: 'ChunkFiveRegular';
+		border: 2px solid @orange;
+		.rounded-corners;
+	}
+}
+
+#shopp form ul 
+{
+	padding-right: 10px !important;
+}

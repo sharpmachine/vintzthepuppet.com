@@ -9,18 +9,19 @@
  * ./wp-content/plugins/shopp/shipping/
  *
  * @author Jonathan Davis
- * @version 1.2
+ * @version 1.2.1
  * @copyright Ingenesis Limited, 26 February, 2009
  * @package shopp
  * @since 1.2
  * @subpackage USPSRates
  *
- * $Id: USPSRates.php 16 2012-02-07 15:30:31Z jdillick $
+ * $Id: USPSRates.php 18 2012-03-27 16:07:33Z jond $
  **/
 
 class USPSRates extends ShippingFramework implements ShippingModule {
 
-	var $url = 'http://production.shippingapis.com/ShippingAPI.dll';
+	const APIURL = 'http://production.shippingapis.com/ShippingAPI.dll';
+
 	var $dimensions = true;
 	var $weight = 0;
 
@@ -75,8 +76,8 @@ class USPSRates extends ShippingFramework implements ShippingModule {
 
 		$this->setup('userid','postcode');
 
-		add_action('shipping_service_settings',array(&$this,'settings'));
-		add_action('shopp_verify_shipping_services',array(&$this,'verify'));
+		add_action('shipping_service_settings',array($this,'settings'));
+		add_action('shopp_verify_shipping_services',array($this,'verify'));
 	}
 
 	function init () {
@@ -109,38 +110,44 @@ class USPSRates extends ShippingFramework implements ShippingModule {
 		}
 
 		$estimate = false;
-		if ($Order->Shipping->country == $this->base['country']) $type = "domestic";
-		else $type = "intl";
+		if ($Order->Shipping->country == $this->base['country']) $type = 'domestic';
+		else $type = 'intl';
 
-		if ($type == "domestic") $Estimates = $Response->tag('Postage');
+		if ('domestic' == $type) $Estimates = $Response->tag('Postage');
 		else $Estimates = $Response->tag('Service');
 
 		while ($rated = $Estimates->each()) {
-			$delivery = "5d-7d";
-			if ($type == "domestic") {
-				$mailsvc = $rated->content('MailService');
+			$delivery = '5d-7d';
+			$mailsvc = $rated->content('MailService');
+
+			if ('domestic' == $type) {
 				$service = substr($type,0,1).$rated->attr(false,'CLASSID');
 				$amount = $rated->content('Rate');
 				$delivery = false;
 			} else {
-				$mailsvc = $rated->content('MailService');
 				$service = substr($type,0,1).$rated->attr(false,'ID');
 				$amount = $rated->content('Postage');
 				if ($SvcCommitments = $rated->content('SvcCommitments'))
 					$delivery = $this->delivery($SvcCommitments);
 			}
 
+			if (is_array($this->settings['services']) && in_array($service,$this->settings['services']) ) {
+				$slug = sanitize_title_with_dashes("$this->module-$service");
 
-			if (is_array($this->settings['services']) && in_array($service,$this->settings['services']) ) { // && in_array($service,$this->rate['services']) WTF was this for??
-				if ($service != 'd0' || "Package" == substr($mailsvc,-7)) {
-					$slug = sanitize_title_with_dashes("$this->module-$service");
-					$rate = array();
-					$rate['name'] = $this->services[$service];
-					$rate['slug'] = $slug;
-					$rate['amount'] = $amount;
-					$rate['delivery'] = $delivery;
-					$options[$slug] = new ShippingOption($rate);
-				}
+				// The following only affects First-Class service as it is the only
+				// service class with multiple rates - it forces use of the first
+				// service class rate (historically the First-Class "Parcel/Package" service),
+				// ignoring the other First-Class rates for envelopes/letters. We have to use
+				// the Parcel rate as a catch all since USPS API does not intelligently filter out
+				// package type services that will not accommodate the product dimensions.
+				if (isset($options[$slug])) continue; // Prevent overwriting same-class rates
+
+				$rate = array();
+				$rate['name'] = $this->services[$service];
+				$rate['slug'] = $slug;
+				$rate['amount'] = $amount;
+				$rate['delivery'] = $delivery;
+				$options[$slug] = new ShippingOption($rate);
 			}
 		}
 
@@ -148,13 +155,14 @@ class USPSRates extends ShippingFramework implements ShippingModule {
 	}
 
 	function build ($postcode,$country) {
-		$type = "RateV3"; // Domestic shipping rates
+		$type = 'RateV4'; // Domestic shipping rates
 		if ($country != $this->base['country']) {
 			global $Shopp;
-			$type = "IntlRate";
+			$type = 'IntlRate';
 			$countries = Lookup::countries();
 			if ($country == "GB") $country = $countries[$country]['name'].' (Great Britain)';
 			else $country = $countries[$country]['name'];
+			$country = substr($country,0,2); // Ensure use of only the 2-letter country code
 		}
 
 		$_ = array('API='.$type.'&XML=<?xml version="1.0" encoding="utf-8"?>');
@@ -192,15 +200,14 @@ class USPSRates extends ShippingFramework implements ShippingModule {
 					$_[] = '<ZipDestination>'.substr($postcode,0,5).'</ZipDestination>';
 					$_[] = '<Pounds>'.$pounds.'</Pounds>';
 					$_[] = '<Ounces>'.$ounces.'</Ounces>';
-					$_[] = '<Container>VARIABLE</Container>';
+					$_[] = '<Container/>';
 					$_[] = '<Size>REGULAR</Size>';
 					if ( $pkg->length() + $pkg->width() + $pkg->height() > 0 ) {
 						$_[] = '<Width>'.convert_unit($pkg->width(), 'in').'</Width>';
 						$_[] = '<Length>'.convert_unit($pkg->length(), 'in').'</Length>';
 						$_[] = '<Height>'.convert_unit($pkg->height(), 'in').'</Height>';
 					}
-					$_[] = '<Machinable>TRUE</Machinable>';
-
+					$_[] = '<Machinable>true</Machinable>';
 				}
 			$_[] = '</Package>';
 		}
@@ -235,8 +242,8 @@ class USPSRates extends ShippingFramework implements ShippingModule {
 		if ($Response->tag('Error')) new ShoppError($Response->content('Description'),'usps_verify_auth',SHOPP_ADDON_ERR);
 	}
 
-	function send ($data,$url=false,$options=array()) {
-		$response = parent::send($data,$this->url);
+	function send ($data) {
+		$response = parent::send($data,self::APIURL);
 		if (empty($response)) return false;
 		return new xmlQuery($response);
 	}

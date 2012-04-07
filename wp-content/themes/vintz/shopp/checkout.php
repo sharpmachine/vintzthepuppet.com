@@ -1,37 +1,38 @@
 <form action="<?php shopp('checkout','url'); ?>" method="post" class="shopp validate" id="checkout">
 <?php shopp('checkout','cart-summary'); ?>
-
+<br \>
 <?php if (shopp('cart','hasitems')): ?>
 	<?php shopp('checkout','function'); ?>
 	<ul>
 		<?php if (shopp('customer','notloggedin')): ?>
 		<li>
 			<label for="login">Login to Your Account</label>
-			<span><?php shopp('customer','account-login','size=20&title=Login'); ?><label for="account-login">Email</label></span>
-			<span><?php shopp('customer','password-login','size=20&title=Password'); ?><label for="password-login">Password</label></span>
+			<span><label for="account-login">Email</label><?php shopp('customer','account-login','size=20&title=Login'); ?></span>
+			<span><label for="password-login">Password</label><?php shopp('customer','password-login','size=20&title=Password'); ?></span>
 			<span><?php shopp('customer','login-button','context=checkout&value=Login'); ?></span>
 		</li>
 		<li></li>
 		<?php endif; ?>
 		<li>
-			<label for="firstname">Contact Information</label>
-			<span><?php shopp('checkout','firstname','required=true&minlength=2&size=8&title=First Name'); ?><label for="firstname">First</label></span>
-			<span><?php shopp('checkout','lastname','required=true&minlength=3&size=14&title=Last Name'); ?><label for="lastname">Last</label></span>
-			<span><?php shopp('checkout','company','size=22&title=Company/Organization'); ?><label for="company">Company/Organization</label></span>
+			
+			<h2>Contact Information</h2><br \>
+			<span><label for="firstname">First</label><?php shopp('checkout','firstname','required=true&minlength=2&size=8&title=First Name'); ?></span>
+			<span><label for="lastname">Last</label><?php shopp('checkout','lastname','required=true&minlength=3&size=14&title=Last Name'); ?></span>
+			<span><label for="company">Company/Organization</label><?php shopp('checkout','company','size=22&title=Company/Organization'); ?></span>
 		</li>
 		<li>
 		</li>
 		<li>
-			<span><?php shopp('checkout','phone','format=phone&size=15&title=Phone'); ?><label for="phone">Phone</label></span>
-			<span><?php shopp('checkout','email','required=true&format=email&size=30&title=Email'); ?>
-			<label for="email">Email</label></span>
+			<span><label for="phone">Phone</label><?php shopp('checkout','phone','format=phone&size=15&title=Phone'); ?></span>
+			<span><label for="email">Email</label><?php shopp('checkout','email','required=true&format=email&size=30&title=Email'); ?></span>
+			
 		</li>
 		<?php if (shopp('customer','notloggedin')): ?>
 		<li>
-			<span><?php shopp('checkout','password','required=true&format=passwords&size=16&title=Password'); ?>
 			<label for="password">Password</label></span>
-			<span><?php shopp('checkout','confirm-password','required=true&format=passwords&size=16&title=Password Confirmation'); ?>
+			<span><?php shopp('checkout','password','required=true&format=passwords&size=16&title=Password'); ?>
 			<label for="confirm-password">Confirm Password</label></span>
+			<span><?php shopp('checkout','confirm-password','required=true&format=passwords&size=16&title=Password Confirmation'); ?>
 		</li>
 		<?php endif; ?>
 		<li></li>
@@ -40,67 +41,67 @@
 		<?php else: ?>
 			<li>
 		<?php endif; ?>
-			<label for="billing-address">Billing Address</label>
+			<br \><h2>Billing Address</h2><br \>
 			<div>
-				<?php shopp('checkout','billing-name','required=false&title=Bill to'); ?>
 				<label for="billing-name">Name</label>
+				<?php shopp('checkout','billing-name','required=false&title=Bill to'); ?>
 			</div>
 			<div>
-				<?php shopp('checkout','billing-address','required=true&title=Billing street address'); ?>
 				<label for="billing-address">Street Address</label>
+				<?php shopp('checkout','billing-address','required=true&title=Billing street address'); ?>
 			</div>
 			<div>
-				<?php shopp('checkout','billing-xaddress','title=Billing address line 2'); ?>
 				<label for="billing-xaddress">Address Line 2</label>
+				<?php shopp('checkout','billing-xaddress','title=Billing address line 2'); ?>
 			</div>
 			<div class="left">
-				<?php shopp('checkout','billing-city','required=true&title=City billing address'); ?>
 				<label for="billing-city">City</label>
+				<?php shopp('checkout','billing-city','required=true&title=City billing address'); ?>
 			</div>
 			<div class="right">
-				<?php shopp('checkout','billing-state','required=true&title=State/Provice/Region billing address'); ?>
 				<label for="billing-state">State / Province</label>
+				<?php shopp('checkout','billing-state','required=true&title=State/Provice/Region billing address'); ?>
 			</div>
 			<div class="left">
-				<?php shopp('checkout','billing-postcode','required=true&title=Postal/Zip Code billing address'); ?>
 				<label for="billing-postcode">Postal / Zip Code</label>
+				<?php shopp('checkout','billing-postcode','required=true&title=Postal/Zip Code billing address'); ?>
 			</div>
 			<div class="right">
-				<?php shopp('checkout','billing-country','required=true&title=Country billing address'); ?>
 				<label for="billing-country">Country</label>
+				<?php shopp('checkout','billing-country','required=true&title=Country billing address'); ?>
 			</div>
 		<?php if (shopp('cart','needs-shipped')): ?>
 			<div class="inline"><?php shopp('checkout','same-shipping-address'); ?></div>
 			</li>
 			<li class="half right" id="shipping-address-fields">
-				<label for="shipping-address">Shipping Address</label>
+				<br \><h2>Shipping Address</h2><br \>
 				<div>
-					<?php shopp('checkout','shipping-name','required=false&title=Ship to'); ?>
 					<label for="shipping-address">Name</label>
+					<?php shopp('checkout','shipping-name','required=false&title=Ship to'); ?>
 				</div>
 				<div>
-					<?php shopp('checkout','shipping-address','required=true&title=Shipping street address'); ?>
 					<label for="shipping-address">Street Address</label>
+					<?php shopp('checkout','shipping-address','required=true&title=Shipping street address'); ?>
 				</div>
 				<div>
-					<?php shopp('checkout','shipping-xaddress','title=Shipping address line 2'); ?>
 					<label for="shipping-xaddress">Address Line 2</label>
+					<?php shopp('checkout','shipping-xaddress','title=Shipping address line 2'); ?>
 				</div>
 				<div class="left">
-					<?php shopp('checkout','shipping-city','required=true&title=City shipping address'); ?>
 					<label for="shipping-city">City</label>
+					<?php shopp('checkout','shipping-city','required=true&title=City shipping address'); ?>
 				</div>
 				<div class="right">
-					<?php shopp('checkout','shipping-state','required=true&title=State/Provice/Region shipping address'); ?>
 					<label for="shipping-state">State / Province</label>
+					<?php shopp('checkout','shipping-state','required=true&title=State/Provice/Region shipping address'); ?>
 				</div>
 				<div class="left">
-					<?php shopp('checkout','shipping-postcode','required=true&title=Postal/Zip Code shipping address'); ?>
 					<label for="shipping-postcode">Postal / Zip Code</label>
+					<?php shopp('checkout','shipping-postcode','required=true&title=Postal/Zip Code shipping address'); ?>
 				</div>
 				<div class="right">
-					<?php shopp('checkout','shipping-country','required=true&title=Country shipping address'); ?>
 					<label for="shipping-country">Country</label>
+					<?php shopp('checkout','shipping-country','required=true&title=Country shipping address'); ?>
 				</div>
 			</li>
 		<?php else: ?>
