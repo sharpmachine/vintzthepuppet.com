@@ -1,5 +1,5 @@
-Paypal Gateway Readme
-=====================
-
-Paypal lets you do most things through the code, so no custom preparation
+Paypal Gateway Readme
+=====================
+
+Paypal lets you do most things through the code, so no custom preparation
 is required.

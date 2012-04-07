@@ -1,3 +1,3 @@
-$(function(){
-	$('h2').collapsible();
+$(function(){
+	$('h2').collapsible();
 });

@@ -1,5 +1,5 @@
-$(function(){
-	$('#files').tree({
-		expanded: 'li:first'
-	});
+$(function(){
+	$('#files').tree({
+		expanded: 'li:first'
+	});
 });
