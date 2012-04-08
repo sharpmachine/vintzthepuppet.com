@@ -583,7 +583,7 @@ form input[type="submit"] {
   background-color: #96d321;
   color: #333333;
   font-family: 'ChunkFiveRegular';
-  border: 2px solid #f2682c;
+  border: none;
   -webkit-border-radius: 5px;
   -moz-border-radius: 5px;
   border-radius: 5px;

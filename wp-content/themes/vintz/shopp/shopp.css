@@ -77,6 +77,7 @@
   margin-bottom: 0;
 }
 #shopp ul.products li .details { float: none; }
+#shopp ul.products li .name { min-height: 46px; }
 #shopp ul.products li .summary { display: none; }
 #shopp ul.products li .listview { display: none; }
 #shopp ul.products img { display: block; }
