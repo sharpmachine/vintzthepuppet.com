@@ -161,7 +161,6 @@ var {
 }
 img {
   max-width: 100%;
-  height: auto;
   padding: 0;
 }
 img.centered, img.aligncenter {
