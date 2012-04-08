@@ -66,7 +66,7 @@ if(!empty($header_image)):
 		 }?>
 
 			<hgroup<?php echo $sprachkonstrukt_header_hide; ?>>
-				<h1><a href="<?php echo home_url( '/' ); ?>" title="<?php echo esc_attr( get_bloginfo( 'name', 'display' ) ); ?>" rel="home"><img src="<?php bloginfo('template_directory'); ?>/images/logo2.png" width="814" height="199" alt="Logo"></a></h2>
+				<h1><a href="<?php echo home_url( '/' ); ?>" title="<?php echo esc_attr( get_bloginfo( 'name', 'display' ) ); ?>" rel="home"><img src="<?php bloginfo('template_directory'); ?>/images/logo3.png" width="886" height="199" alt="Logo"></a></h2>
 			</hgroup>
 			
 		</header>
