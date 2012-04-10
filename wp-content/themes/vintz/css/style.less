@@ -544,6 +544,7 @@ li > ul {
 .socialbuttons li {
 	float: right;
 	padding-bottom: 15px;
+	list-style: none;
 }
 
 .socialbuttons li a {
@@ -802,7 +803,11 @@ border-bottom: 1px solid @red !important;
 
 form
 {
-	input[type="text"], select, textarea
+	input[type="text"],
+	input[type="email"],
+	input[type="url"], 
+	select, 
+	textarea
 	{
 		background-color: @burnt-yellow;
 		color: @dark-blue;
@@ -813,14 +818,16 @@ form
 		.rounded-corners;
 	}
 	
-	input[type="text"]
+	input[type="text"],
+	input[type="email"],
+	input[type="url"]
 	{
 		height: 30px;
 	}
 	
 	select
 	{
-		height: 34px;
+		height: 30px;
 	}
 	
 	textarea

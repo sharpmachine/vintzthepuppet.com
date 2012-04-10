@@ -164,6 +164,7 @@
 #shopp #cart table input#shipping-postcode {
   width: 53px;
   margin-bottom: 10px;
+  height: 26px;
 }
 #shopp #cart table select#shipping-country { margin-bottom: 10px; }
 #shopp #cart th {

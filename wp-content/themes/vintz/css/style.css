@@ -391,6 +391,7 @@ li > ul {
 .socialbuttons li {
   float: right;
   padding-bottom: 15px;
+  list-style: none;
 }
 .socialbuttons li a {
   background: url('../images/socialbuttons.png');
@@ -551,6 +552,28 @@ form input[type="text"] {
   -moz-border-radius: 5px;
   border-radius: 5px;
 }
+form input[type="email"] {
+  background-color: #fdb602;
+  color: #1f81aa;
+  font-weight: bold;
+  font-size: 16px;
+  padding: 0 3px;
+  border: 2px solid #f2682c;
+  -webkit-border-radius: 5px;
+  -moz-border-radius: 5px;
+  border-radius: 5px;
+}
+form input[type="url"] {
+  background-color: #fdb602;
+  color: #1f81aa;
+  font-weight: bold;
+  font-size: 16px;
+  padding: 0 3px;
+  border: 2px solid #f2682c;
+  -webkit-border-radius: 5px;
+  -moz-border-radius: 5px;
+  border-radius: 5px;
+}
 form select {
   background-color: #fdb602;
   color: #1f81aa;
@@ -574,7 +597,9 @@ form textarea {
   border-radius: 5px;
 }
 form input[type="text"] { height: 30px; }
-form select { height: 34px; }
+form input[type="email"] { height: 30px; }
+form input[type="url"] { height: 30px; }
+form select { height: 30px; }
 form textarea { font-family: Arial, sans-serif; }
 form input[type="submit"] {
   height: 35px;
