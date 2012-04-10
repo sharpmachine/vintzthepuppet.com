@@ -1,4 +1,6 @@
 <?php
+include 'functions/need-help-dashboard-widget.php';
+include 'functions/customize-admin.php';
 /**
  * Functions
  *
@@ -143,8 +145,11 @@ if ( ! function_exists( 'sprachkonstrukt_socialbuttons' ) ):
 function sprachkonstrukt_socialbuttons() {
 
 	echo '<ul class="socialbuttons">
-			<li><a href="'.get_bloginfo('rss2_url').'" title="'.__('RSS', 'sprachkonstrukt').'">'.__('RSS', 'sprachkonstrukt').'</a></li>';
-	echo '</ul>';			
+			<li><a href="'.get_bloginfo('rss2_url').'" title="'.__('RSS', 'sprachkonstrukt').'">'.__('RSS', 'sprachkonstrukt').'</a></li>
+			<li><a href="http://www.twitter.com/sethdahl" title="'.__('Twitter', 'sprachkonstrukt').'">'.__('Twitter', 'sprachkonstrukt').'</a></li>
+			<li><a href="https://www.facebook.com/seth.dahl" title="'.__('Facebook', 'sprachkonstrukt').'">'.__('Facebook', 'sprachkonstrukt').'</a></li>';
+	echo '</ul>';	
+			
 }
 endif;
 
