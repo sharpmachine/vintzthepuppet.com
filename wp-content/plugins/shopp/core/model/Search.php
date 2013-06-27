@@ -41,6 +41,7 @@ class IndexProduct {
 	function __construct ($id) {
 		$this->Product = new Product($id);
 		$this->Product->load_data(array('prices','specs','categories','tags'));
+		wp_cache_reset();
 	}
 
 	/**
@@ -189,6 +190,7 @@ class SearchParser extends SearchTextFilters {
 	function __construct () {
 		add_filter('shopp_search_query',array('SearchParser','MarkupFilter'));
 		add_filter('shopp_search_query',array('SearchParser','CurrencyFilter'));
+		add_filter('shopp_search_query',array('SearchParser','StopFilter'));
 		add_filter('shopp_search_query',array('SearchParser','AccentFilter'));
 		add_filter('shopp_search_query',array('SearchParser','LowercaseFilter'));
 		add_filter('shopp_search_query',array('SearchParser','NormalizeFilter'));
@@ -251,6 +253,7 @@ class BooleanParser extends SearchTextFilters {
 		add_filter('shopp_boolean_search',array('BooleanParser','MarkupFilter'));
 		add_filter('shopp_boolean_search',array('BooleanParser','CurrencyFilter'));
 		add_filter('shopp_boolean_search',array('BooleanParser','AccentFilter'));
+		add_filter('shopp_boolean_search',array('BooleanParser','StopFilter'));
 		add_filter('shopp_boolean_search',array('BooleanParser','LowercaseFilter'));
 		add_filter('shopp_boolean_search',array('BooleanParser','NormalizeFilter'));
 		add_filter('shopp_boolean_search',array('BooleanParser','StemFilter'));
@@ -287,6 +290,7 @@ class ShortwordParser extends SearchTextFilters {
 		add_filter('shopp_shortword_search',array('ShortwordParser','AccentFilter'));
 		add_filter('shopp_shortword_search',array('ShortwordParser','LowercaseFilter'));
 		add_filter('shopp_shortword_search',array('ShortwordParser','ShortwordFilter'));
+		add_filter('shopp_shortword_search',array('ShortwordParser','StopFilter'));
 		add_filter('shopp_shortword_search',array('ShortwordParser','NormalizeFilter'));
 	}
 

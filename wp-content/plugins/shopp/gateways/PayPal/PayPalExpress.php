@@ -10,7 +10,7 @@
  * @since 1.2
  * @subpackage PayPalExpress
  *
- * $Id: PayPalExpress.php 3107 2012-04-09 14:34:32Z jond $
+ * $Id: PayPalExpress.php 3276 2012-06-25 20:01:40Z jdillick $
  **/
 
 class PayPalExpress extends GatewayFramework implements GatewayModule {
@@ -156,6 +156,9 @@ class PayPalExpress extends GatewayFramework implements GatewayModule {
 	 * @return void
 	 **/
 	function checkout () {
+		// because shopp_process_free_order occurs after shopp_checkout_processed
+		// we do not want to redirect if the order is free at shopp_checkout_processed
+		if ( $this->Order->Cart->orderisfree() ) return;
 
 		$response = $this->SetExpressCheckout();
 		shopp_redirect(add_query_arg('token',$response->token,$this->url()));
@@ -196,7 +199,7 @@ class PayPalExpress extends GatewayFramework implements GatewayModule {
 
 		$response = $this->DoExpressCheckoutPayment();
 		$status = $this->status[ $response->paymentinfo_0_paymentstatus ];
-
+		if(SHOPP_DEBUG) new ShoppError(__FUNCTION__." response: "._object_r($response),false,SHOPP_DEBUG_ERR);
 		new ShoppError("PayPal Express DoExpressCheckoutPayment STATUS: $response->paymentinfo_0_paymentstatus = $status",false,SHOPP_DEBUG_ERR);
 
 		$txnid = $response->paymentinfo_0_transactionid;
@@ -294,8 +297,7 @@ class PayPalExpress extends GatewayFramework implements GatewayModule {
 
 		$_ = array_merge($_,$this->PaymentRequest());
 
-		$message = $this->encode($_);
-		$response = $this->send($message);
+		$response = $this->send($_);
 
 		if ( is_a($response,'ShoppError') ) return $response;
 
@@ -333,8 +335,7 @@ class PayPalExpress extends GatewayFramework implements GatewayModule {
 		// Get transaction details
 		$response = false;
 		for ($attempts = 0; $attempts < 2 && !$response; $attempts++) {
-			$message = $this->encode($_);
-			$response = $this->send($message);
+			$response = $this->send($_);
 		}
 
 		$fields = array(
@@ -396,14 +397,13 @@ class PayPalExpress extends GatewayFramework implements GatewayModule {
 		$_['TOKEN'] 							= $Order->token;
 		$_['PAYERID'] 							= $Order->payerid;
 		$_['BUTTONSOURCE']						= 'shopplugin.net[PPE]';
+		$_['PAYMENTREQUEST_0_NOTIFYURL']		= shoppurl(array('_txnupdate'=>'PPE'),'checkout');
 
 		// Transaction
 		$_ = array_merge($_,$this->PaymentRequest());
+		$response = $this->send($_);
 
-		$message = $this->encode($_);
-		$response = $this->send($message);
-
-		if (!$response) {
+		if ( is_a($response,'ShoppError') ) {
 			new ShoppError(__('No response was received from PayPal. The order cannot be processed.','Shopp'),'paypalexpress_noresults',SHOPP_COMM_ERR);
 			shopp_redirect(shoppurl(false,'checkout'));
 		}
@@ -447,8 +447,7 @@ class PayPalExpress extends GatewayFramework implements GatewayModule {
 		$_['REFUNDTYPE'] = $type;
 		if ( !empty($reason) ) $_['NOTE'] = $reason;
 
-		$message = $this->encode($_);
-		$response = $this->send($message);
+		$response = $this->send($_);
 
 		if ( SHOPP_DEBUG && 'Success' != $response->ack ) new ShoppError('In '.__FUNCTION__.': '.$response->debuglog, 'debug'.__FUNCTION__, SHOPP_DEBUG_ERR);
 
@@ -506,7 +505,6 @@ class PayPalExpress extends GatewayFramework implements GatewayModule {
 			$_['L_PAYMENTREQUEST_0_AMT'.$i]			= $this->amount($Item->unitprice);
 			$_['L_PAYMENTREQUEST_0_NUMBER'.$i]		= $i;
 			$_['L_PAYMENTREQUEST_0_QTY'.$i]			= $Item->quantity;
-			$_['L_PAYMENTREQUEST_0_TAXAMT'.$i]		= $this->amount(0);
 		}
 
 		if ($Totals->discount != 0) {
@@ -519,8 +517,13 @@ class PayPalExpress extends GatewayFramework implements GatewayModule {
 			$_['L_PAYMENTREQUEST_0_NAME'.$i]		= htmlentities(join(", ",$discounts));
 			$_['L_PAYMENTREQUEST_0_AMT'.$i]			= $this->amount($Totals->discount*-1);
 			$_['L_PAYMENTREQUEST_0_QTY'.$i]			= 1;
-			$_['L_PAYMENTREQUEST_0_TAXAMT'.$i]		= $this->amount(0);
 		}
+
+		// Transaction
+		$_['PAYMENTREQUEST_0_CURRENCYCODE']			= $this->settings['currency_code'];
+		$_['PAYMENTREQUEST_0_ITEMAMT']				= (float)$this->amount('subtotal')-(float)$this->amount('discount');
+		$_['PAYMENTREQUEST_0_TAXAMT']				= $this->amount('tax');
+		$_['PAYMENTREQUEST_0_AMT']					= $this->amount('total');
 
 		// Workaround a PayPal limitation that does not handle a 0.00 subtotal amount/
 		// that may happen because of discounts (subtotal-discount=0.00). We handle this
@@ -530,21 +533,18 @@ class PayPalExpress extends GatewayFramework implements GatewayModule {
 
 		if ($_['PAYMENTREQUEST_0_ITEMAMT'] == 0) {
 
+			$amount = $this->amount( max(0.01,$this->amount('shipping')) ); // Choose the higher amount of shipping costs or 0.01
 			$i++;
 			$_['L_PAYMENTREQUEST_0_NUMBER'.$i]		= $i;
 			$_['L_PAYMENTREQUEST_0_NAME'.$i]		= apply_filters('paypal_freeorder_handling_label',__('Shipping & Handling','Shopp'));
-			$_['L_PAYMENTREQUEST_0_AMT'.$i]			= $this->amount( max(0.01,$this->amount('shipping')) ); // Choose the higher amount of shipping costs or 0.01
+			$_['L_PAYMENTREQUEST_0_AMT'.$i]			= $amount;
 			$_['L_PAYMENTREQUEST_0_QTY'.$i]			= 1;
-			$_['L_PAYMENTREQUEST_0_TAXAMT'.$i]		= $this->amount(0);
+
+			// Adjust subtotals accordingly
+			$_['PAYMENTREQUEST_0_ITEMAMT'] += $amount;
+			$_['PAYMENTREQUEST_0_AMT'] += $amount;
 
 		} else $_['PAYMENTREQUEST_0_SHIPPINGAMT']	= $this->amount('shipping');
-
-		// Transaction
-		$_['PAYMENTREQUEST_0_AMT']					= $this->amount('total');
-		$_['PAYMENTREQUEST_0_ITEMAMT']				= (float)$this->amount('subtotal')-(float)$this->amount('discount');
-		$_['PAYMENTREQUEST_0_TAXAMT']				= $this->amount('tax');
-		$_['PAYMENTREQUEST_0_CURRENCYCODE']			= $this->settings['currency_code'];
-
 
 		return $_;
 	}
@@ -558,6 +558,7 @@ class PayPalExpress extends GatewayFramework implements GatewayModule {
 	 * @return void
 	 **/
 	function ipn () {
+		if(SHOPP_DEBUG) new ShoppError("IPN message: "._object_r($_POST),false,SHOPP_DEBUG_ERR);
 
 		// Cancel processing if this is not a PayPal Website Payments Standard/Express Checkout IPN
 		if (isset($_POST['txn_type']) && $_POST['txn_type'] != "cart") return false;
@@ -626,7 +627,7 @@ class PayPalExpress extends GatewayFramework implements GatewayModule {
 		$_ = array();
 		$_['cmd'] = '_notify-validate';
 
-		$message = $this->encode(array_merge($_POST,$_));
+		$message = array_merge($_POST,$_);
 		$response = $this->send($message);
 
 		if (SHOPP_DEBUG) new ShoppError('PayPal IPN notification verfication response received: '.$response,'paypal_standard',SHOPP_DEBUG_ERR);
@@ -643,7 +644,7 @@ class PayPalExpress extends GatewayFramework implements GatewayModule {
 	 * @return Object The response from the server or a ShoppError
 	 **/
 	function send ($message) {
-		if(SHOPP_DEBUG) new ShoppError('message: '._object_r($this->response($message)),false,SHOPP_DEBUG_ERR);
+		if(SHOPP_DEBUG) new ShoppError('message: '._object_r($message),false,SHOPP_DEBUG_ERR);
 		$response = parent::send($message,$this->apiurl());
 
 		if (!$response) return new ShoppError($this->name.": ".Lookup::errors('gateway','noresponse'),'gateway_comm_err',SHOPP_COMM_ERR);

@@ -97,6 +97,8 @@ class Order {
 		$this->confirm = (shopp_setting('order_confirmation') == 'always');
 		$this->validated = false; // Reset the order validation flag
 
+		add_action('parse_request',array($this,'request'));
+
 		add_action('shopp_process_shipmethod', array($this,'shipmethod'));
 		add_action('shopp_process_checkout', array($this,'checkout'));
 		add_action('shopp_confirm_order', array($this,'confirmed'));
@@ -129,9 +131,17 @@ class Order {
 		// Schedule for after the gateways are loaded (priority 20)
 		add_action('shopp_init',array($this,'payoptions'),20);
 
+		// Process customer selected payment methods after gateways are loaded (priority 20)
+		add_action('shopp_init',array($this,'payment'),20);
+
 		// Select the default gateway processor
 		// Schedule for after the gateways are loaded (priority 20)
 		add_action('shopp_init',array($this,'processor'),20);
+
+		// Handle remote transaction processing (priority 20)
+		// Needs to happen after the processor is selected in the session,
+		// but before gateway-order specific handlers are established
+		add_action('shopp_init',array($this,'txnupdates'),20);
 
 		// Set locking timeout for concurrency operation protection
 		if (!defined('SHOPP_TXNLOCK_TIMEOUT')) define('SHOPP_TXNLOCK_TIMEOUT',10);
@@ -150,6 +160,52 @@ class Order {
 	}
 
 	/**
+	 * Handles remote transaction update request flow control
+	 *
+	 * Moved from the Flow class in 1.2.3
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2.3
+	 *
+	 * @return void
+	 **/
+	function txnupdates () {
+
+		add_action('shopp_txn_update',create_function('',"status_header('200'); exit();"),101); // Default shopp_txn_update requests to HTTP status 200
+
+		if ( ! empty($_REQUEST['_txnupdate']) )
+			return do_action('shopp_txn_update');
+
+	}
+
+	/**
+	 * Handles checkout request flow control
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2.3
+	 *
+	 * @return void
+	 **/
+	function request () {
+
+		if ( ! empty($_REQUEST['rmtpay']) )
+			return do_action('shopp_remote_payment');
+
+		if ( array_key_exists('checkout',$_POST) ) {
+
+			$checkout = strtolower($_POST['checkout']);
+			if ('process' == $checkout) 		do_action('shopp_process_checkout');
+			elseif ('confirmed' == $checkout)	do_action('shopp_confirm_order');
+
+		} elseif ( array_key_exists('shipmethod',$_POST) ) {
+
+			do_action('shopp_process_shipmethod');
+
+		}
+
+	}
+
+	/**
 	 * Builds a list of payment method options
 	 *
 	 * @author Jonathan Davis
@@ -158,10 +214,14 @@ class Order {
 	 * @return void
 	 **/
 	function payoptions () {
+
+		if ('FreeOrder' == $this->processor) return;
+
 		global $Shopp;
 		$Gateways = $Shopp->Gateways;
 		$accepted = array();
 		$options = array();
+		$processor = false;
 
 		$gateways = explode(",",shopp_setting('active_gateways'));
 
@@ -171,6 +231,7 @@ class Order {
 			else $module = $gateway;
 			if (!isset($Gateways->active[ $module ])) continue;
 			$Gateway = $Gateways->active[ $module ];
+			if ($module == $this->processor) $processor = true;
 			$settings = $Gateway->settings;
 
 			if ( false !== $id && isset($Gateway->settings[$id]) )
@@ -190,6 +251,39 @@ class Order {
 
 		$this->paycards = $accepted;
 		$this->payoptions = $options;
+
+		$processors = array_keys($this->payoptions);
+		$processors[] = 'FreeOrder'; // Include FreeOrder in list of available payment systems
+
+		// Setup default payment method if the current is not found in the active gateways or payment options
+		if ( false == $processor || !in_array($this->paymethod,array_keys($this->payoptions))) {
+			$default = reset($this->payoptions);
+			if (!empty($default)) $this->paymethod = key($this->payoptions);
+			$this->processor = $this->payoptions[$this->paymethod]->processor;
+		}
+
+	}
+
+	function payment () {
+		global $Shopp;
+		$Gateways = $Shopp->Gateways;
+
+		// Set the gateway processor from a selected payment method
+		if ( isset($_POST['paymethod']) ) {
+			$selected = $_POST['paymethod'];
+			unset($_POST['paymethod']); // Prevent unnecessary reprocessing on subsequent calls
+			$processor = false;
+			if ( isset($this->payoptions[$selected]) ) {
+				$processor = $this->payoptions[$selected]->processor;
+				if (in_array($processor,$Gateways->activated)) {
+					$this->paymethod = $selected;
+					$this->processor = $processor;
+					$this->_paymethod_selected = true;
+				}
+			}
+			if (!$processor) new ShoppError(__('The payment method you selected is no longer available. Please choose another.','Shopp'));
+		}
+
 	}
 
 	/**
@@ -200,7 +294,7 @@ class Order {
 	 *
 	 * @return Object|false The currently selected gateway
 	 **/
-	function processor ($processor=false) {
+	public function processor ($processor=false) {
 		global $Shopp;
 
 		if ('FreeOrder' == $processor || 'FreeOrder' == $this->processor) {
@@ -214,23 +308,6 @@ class Order {
 			}
 		}
 
-		// Set the gateway processor from a selected payment method
-		if (isset($_POST['paymethod'])) {
-			$processor = false;
-			if (isset($this->payoptions[$_POST['paymethod']])) {
-				$this->paymethod = $_POST['paymethod'];
-				$processor = $this->payoptions[$this->paymethod]->processor;
-				if (in_array($processor,$Shopp->Gateways->activated)) {
-					$this->processor = $processor;
-					$this->_paymethod_selected = true;
-					 // Prevent unnecessary reprocessing on subsequent calls
-					unset($_POST['paymethod']);
-				}
-			}
-			if (!$processor) new ShoppError(__('The payment method you selected is no longer available. Please choose another.','Shopp'));
-		}
-
-
 		// No processor set for this order, set default from payment options
 		if ( false == $this->processor ) {
 			$default = reset($this->payoptions);
@@ -240,6 +317,8 @@ class Order {
 		// No valid payoptions for the selected payment method, bail
 		if ( ! isset($this->payoptions[$this->paymethod]) ) {
 			$this->paymethod = false;
+			// Only show error after checkout form is submitted
+			if (isset($_POST['checkout'])) new ShoppError(Lookup::errors('gateway','nogateways'));
 			return false;
 		}
 
@@ -321,8 +400,8 @@ class Order {
 	 * @return void
 	 **/
 	function checkout () {
-		global $Shopp;
 		$Shopping = ShoppShopping();
+		$Cart = $this->Cart;
 
 		if (!isset($_POST['checkout'])) return;
 		if ($_POST['checkout'] != 'process') return;
@@ -396,16 +475,16 @@ class Order {
 			}
 		}
 
-		if (!empty($this->Cart->shipped)) {
+		if (!empty($Cart->shipped)) {
 			if (empty($this->Shipping))
 				$this->Shipping = new ShippingAddress();
 
 			if (isset($_POST['shipping'])) $this->Shipping->updates($_POST['shipping']);
-			if (!empty($_POST['shipmethod']) && isset($this->Cart->shipping[$_POST['shipmethod']])) $this->Shipping->method = $_POST['shipmethod'];
-			else $this->Shipping->method = key($this->Cart->shipping);
+			if (!empty($_POST['shipmethod']) && isset($Cart->shipping[$_POST['shipmethod']])) $this->Shipping->method = $_POST['shipmethod'];
+			else $this->Shipping->method = key($Cart->shipping);
 
-			if (isset($this->Cart->shipping[$this->Shipping->method]))
-				$this->Shipping->option = $this->Cart->shipping[$this->Shipping->method]->name;
+			if (isset($Cart->shipping[$this->Shipping->method]))
+				$this->Shipping->option = $Cart->shipping[$this->Shipping->method]->name;
 
 		} else $this->Shipping = new ShippingAddress(); // Use blank shipping for non-Shipped orders
 
@@ -426,11 +505,11 @@ class Order {
 			}
 		}
 
-		$freebie = $this->Cart->orderisfree();
-		$estimated = $this->Cart->Totals->total;
+		$freebie = $Cart->orderisfree();
+		$estimated = $Cart->Totals->total;
 
-		$this->Cart->changed(true);
-		$this->Cart->totals();
+		$Cart->changed(true);
+		$Cart->totals();
 
 		// Stop here if this is a shipping method update
 		if (isset($_POST['update-shipping'])) return;
@@ -438,22 +517,27 @@ class Order {
 		if ($this->validform() !== true) return;
 		else $this->Customer->updates($_POST); // Catch changes from validation
 
-		do_action('shopp_checkout_processed');
-
 		// Catch originally free orders that get extra (shipping) costs added to them
-		if ($freebie && $this->Cart->Totals->total > 0) {
+		if ($freebie && !$Cart->orderisfree()) {
 
 			if ( ! (count($this->payoptions) == 1 // One paymethod
 					&& ( isset($this->payoptions[$this->paymethod]->cards) // Remote checkout
 						&& empty( $this->payoptions[$this->paymethod]->cards ) ) )
 				) {
-				new ShoppError(__('Payment information for this order is missing.','Shopp'),'checkout_no_paymethod');
+				new ShoppError(__('The order amount changed and requires that you select a payment method.','Shopp'),'checkout_no_paymethod');
 				shopp_redirect( shoppurl(false,'checkout',$this->security()) );
 			}
-		} elseif ($freebie) do_action('shopp_process_free_order');
+
+		}
+
+		// If using shopp_checkout_processed for a payment gateway redirect action
+		// be sure to include a ShoppOrder()->Cart->orderisfree() check first.
+		do_action('shopp_checkout_processed');
+
+		if ($Cart->orderisfree()) do_action('shopp_process_free_order');
 
 		// If the cart's total changes at all, confirm the order
-		if (apply_filters('shopp_order_confirm_needed', ($estimated != $this->Cart->Totals->total || $this->confirm) ))
+		if (apply_filters('shopp_order_confirm_needed', ($estimated != $Cart->Totals->total || $this->confirm) ))
 			shopp_redirect( shoppurl(false,'confirm',$this->security()) );
 		else do_action('shopp_process_order');
 
@@ -643,8 +727,8 @@ class Order {
 	function freebie ($free) {
 		// if (!$free) return $free;
 
-		$this->gateway = 'FreeOrder';
-		$this->processor($this->gateway);
+		$this->processor = 'FreeOrder';
+		$this->processor($this->processor);
 		$this->Billing->cardtype = __('Free Order','Shopp');
 
 		return true;
@@ -686,6 +770,7 @@ class Order {
 			$updates = true;
 			if ( !empty(ShoppPurchase()->id) ) $Purchase = ShoppPurchase();	// Update existing order
 			else $Purchase = new Purchase($this->inprogress);
+			$changed = ($this->checksum != $this->Cart->checksum); // Detect changes to the cart
 		}
 
 		// Capture early event transaction IDs
@@ -707,24 +792,36 @@ class Order {
 		Promotion::used(array_keys($promos));
 
 		// Process the order events if updating an existing order
-		if (!empty($this->inprogress)) {
+		if ( ! empty($this->inprogress) ) {
+
+			if ($changed) { // The order has changed since the last order attempt
+
+				// Rebuild purchased records from cart items
+				$Purchase->delete_purchased();
+
+				// Void prior invoiced balance
+				shopp_add_order_event($Purchase->id,'voided',array(
+					'txnorigin' => '','txnid' => '',
+					'gateway' => $Purchase->gateway
+				));
+
+				// Recreate purchased records from the cart and re-invoice for the new order total
+				$this->items($Purchase->id);
+				$this->invoice($Purchase);
+
+			}
+
 			ShoppPurchase($Purchase);
 			return $this->process($Purchase);
 		}
 
 		// Catch Purchase record save errors
-		if (empty($Purchase->id)) {
+		if ( empty($Purchase->id) ) {
 			new ShoppError(__('The order could not be created because of a technical problem on the server. Please try again, or contact the website adminstrator.','Shopp'),'shopp_purchase_save_failure');
 			return;
 		}
 
-		// Build purchased records from cart items
-		foreach($this->Cart->contents as $Item) {
-			$Purchased = new Purchased();
-			$Purchased->purchase = $Purchase->id;
-			$Purchased->copydata($Item);
-			$Purchased->save();
-		}
+		$this->items($Purchase->id);		// Create purchased records from the cart items
 
 		$this->purchase = false; 			// Clear last purchase in prep for new purchase
 		$this->inprogress = $Purchase->id;	// Keep track of the purchase record in progress for transaction updates
@@ -735,6 +832,25 @@ class Order {
 		// Start the transaction processing events
 		do_action('shopp_purchase_order_created',$Purchase);
 
+	}
+
+	/**
+	 * Builds purchased records from cart items attached to the given Purchase ID
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2.2
+	 *
+	 * @param int $purchaseid The Purchase id to attach the purchased records to
+	 * @return void
+	 **/
+	function items ( $purchaseid ) {
+		foreach($this->Cart->contents as $Item) {	// Build purchased records from cart items
+			$Purchased = new Purchased();
+			$Purchased->purchase = $purchaseid;
+			$Purchased->copydata($Item);
+			$Purchased->save();
+		}
+		$this->checksum = $this->Cart->checksum;	// Track the cart contents checksum to detect changes.
 	}
 
 	/**
@@ -968,7 +1084,8 @@ class Order {
 			}
 			if(SHOPP_DEBUG) new ShoppError('Login set to '. $_POST['loginname'] . ' for WordPress account creation.',false,SHOPP_DEBUG_ERR);
 			$ExistingCustomer = new Customer($_POST['email'],'email');
-			if (apply_filters('shopp_email_exists',(email_exists($_POST['email']) || !empty($ExistingCustomer->id))))
+			if ( $this->guest && ! empty($ExistingCustomer->id) ) $this->Customer->id = $ExistingCustomer->id;
+			if ( apply_filters('shopp_email_exists', !$this->guest && (email_exists($_POST['email']) || !empty($ExistingCustomer->id))) )
 				return new ShoppError(__('The email address you entered is already in use. Try logging in if you previously created an account, or enter another email address to create your new account.','Shopp'),'cart_validation');
 		} elseif ('shopp' == shopp_setting('account_system') && !$this->Customer->logged_in()) {
 			$ExistingCustomer = new Customer($_POST['email'],'email');
@@ -1010,6 +1127,9 @@ class Order {
 		if (apply_filters('shopp_billing_country_required',empty($this->Billing->country)))
 			return new ShoppError(__('You must select a country for your billing information.','Shopp'),'cart_validation');
 
+		if (apply_filters('shopp_billing_locale_required',isset($_POST['billing']['locale']) && empty($_POST['billing']['locale'])))
+			return new ShoppError(__('You must select a local jursidiction for tax purposes.','Shopp'),'cart_validation');
+
 		// Skip validating payment details for purchases not requiring a
 		// payment (credit) card including free orders, remote checkout systems, etc
 		if (!$this->paycard()) return apply_filters('shopp_validate_checkout',true);
@@ -1043,7 +1163,6 @@ class Order {
 
 		return apply_filters('shopp_validate_checkout',true);
 	}
-
 
 	function validate () {
 		if (apply_filters('shopp_valid_order',$this->isvalid())) return true;
@@ -1352,7 +1471,7 @@ class OrderEventMessage extends MetaObject {
 			$OrderEventClass = get_class($this);
 		}
 		$index = isset($record->$index)?$record->$index:'!NO_INDEX!';
-		$Object = new $OrderEventClass();
+		$Object = new $OrderEventClass(false);
 		$Object->msgprops();
 		$Object->populate($record);
 		if (method_exists($Object,'expopulate'))
@@ -1379,8 +1498,8 @@ class OrderEventMessage extends MetaObject {
 	function label () {
 		if ( '' == $this->name ) return '';
 
-		$states = shopp_setting('order_states');
-		$labels = shopp_setting('order_status');
+		$states = (array)shopp_setting('order_states');
+		$labels = (array)shopp_setting('order_status');
 
 		$index = array_search($this->name, $states);
 

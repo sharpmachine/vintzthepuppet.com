@@ -53,7 +53,7 @@ add_meta_box(
 	'save-product',
 	__('Save','Shopp').$Admin->boxhelp('product-editor-save'),
 	'save_meta_box',
-	get_current_screen()->id,
+	Product::$posttype,
 	'side',
 	'core'
 );
@@ -116,7 +116,7 @@ function shopp_categories_meta_box ($Product,$options) {
 	<div id="new-<?php echo $taxonomy; ?>" class="new-category hide-if-no-js">
 	<input type="text" name="new<?php echo $taxonomy; ?>" value="" id="new-<?php echo $taxonomy; ?>-name" /><br />
 	<?php wp_dropdown_categories( array( 'taxonomy' => $taxonomy, 'hide_empty' => 0, 'name' => 'new'.$taxonomy.'_parent', 'orderby' => 'name', 'hierarchical' => 1, 'show_option_none' => $tax->labels->parent_item.'&hellip;', 'tab_index' => 3 ) ); ?>
-	<button id="add-new-category" type="button" class="add:<?php echo $taxonomy ?>-checklist:taxonomy-<?php echo $taxonomy ?> button category-add-sumbit" tabindex="2"><small><?php _e('Add','Shopp'); ?></small></button>
+	<input id="<?php echo $taxonomy; ?>-add-submit" type="button" value="<?php _e('Add','Shopp'); ?>" class="add:<?php echo $taxonomy ?>-checklist:taxonomy-<?php echo $taxonomy ?> button <?php echo $taxonomy ?>-add-submit" tabindex="3" />
 	<?php wp_nonce_field( 'add-'.$taxonomy, '_ajax_nonce-add-'.$taxonomy, false ); ?>
 	<span id="<?php echo $taxonomy; ?>-ajax-response"></span>
 	</div>
@@ -124,7 +124,7 @@ function shopp_categories_meta_box ($Product,$options) {
 	<ul id="<?php echo $taxonomy; ?>-tabs" class="category-tabs">
 		<li class="tabs"><a href="#<?php echo $taxonomy; ?>-all" tabindex="3"><?php _e('Show All'); ?></a></li>
 		<li class="hide-if-no-js"><a href="#<?php echo $taxonomy; ?>-pop" tabindex="3"><?php _e( 'Popular','Shopp' ); ?></a></li>
-		<li class="hide-if-no-js hide-if-js new-category"><a href="#<?php echo $taxonomy; ?>-all" tabindex="3"  class="new-category-tab"><?php _e( 'New Category' ); ?></a></li>
+		<li class="hide-if-no-js new-category"><a href="#<?php echo $taxonomy; ?>-all" tabindex="3"  class="new-category-tab"><?php _e( 'New Category' ); ?></a></li>
 	</ul>
 </div><?php
 }
@@ -155,8 +155,8 @@ foreach ( get_object_taxonomies(Product::$posttype) as $taxonomy_name ) {
 	$taxonomy = get_taxonomy($taxonomy_name);
 	$label = $taxonomy->labels->name;
 	if ( is_taxonomy_hierarchical($taxonomy_name) )
-		add_meta_box($taxonomy_name.'-box', $label.$Admin->boxhelp('product-editor-categories'), 'shopp_categories_meta_box', get_current_screen()->id, 'side', 'core', array( 'taxonomy' => $taxonomy_name ));
-	else add_meta_box($taxonomy_name.'-box', $label.$Admin->boxhelp('product-editor-tags'), 'shopp_tags_meta_box', get_current_screen()->id, 'side', 'core', array( 'taxonomy' => $taxonomy_name ));
+		add_meta_box($taxonomy_name.'-box', $label.$Admin->boxhelp('product-editor-categories'), 'shopp_categories_meta_box', Product::$posttype, 'side', 'core', array( 'taxonomy' => $taxonomy_name ));
+	else add_meta_box($taxonomy_name.'-box', $label.$Admin->boxhelp('product-editor-tags'), 'shopp_tags_meta_box', Product::$posttype, 'side', 'core', array( 'taxonomy' => $taxonomy_name ));
 
 }
 
@@ -197,7 +197,7 @@ add_meta_box(
 	'product-settings',
 	__('Settings','Shopp').$Admin->boxhelp('product-editor-settings'),
 	'settings_meta_box',
-	get_current_screen()->id,
+	Product::$posttype,
 	'side',
 	'core'
 );

@@ -1637,16 +1637,18 @@ function shopp_find_wpload () {
 		$wp_abspath = dirname($root); // wp-config up one directory from DOCUMENT_ROOT
     } else {
         /* Last chance, do or die */
+		$filepath = sanitize_path($filepath);
         if (($pos = strpos($filepath, 'wp-content/plugins')) !== false)
             $wp_abspath = substr($filepath, 0, --$pos);
     }
 
-	$wp_load_file = sanitize_path($wp_abspath).'/'.$loadfile;
+	$wp_load_file = realpath(sanitize_path($wp_abspath).'/'.$loadfile);
 
 	if ( $wp_load_file !== false ) return $wp_load_file;
 	return false;
 
 }
+
 /**
  * Ties the key status and update key together
  *
@@ -1777,7 +1779,6 @@ function shopp_parse_options ($options) {
  **/
 function shopp_redirect ($uri,$exit=true,$status=302) {
 	if (class_exists('ShoppError'))	new ShoppError('Redirecting to: '.$uri,'shopp_redirect',SHOPP_DEBUG_ERR);
-	header('Content-Length: 0');
 	wp_redirect($uri,$status);
 	if ($exit) exit();
 }
@@ -1894,9 +1895,14 @@ function shopp_template_url ($name) {
  * @return string The final URL
  **/
 function shoppurl ($request=false,$page='catalog',$secure=null) {
+	global $is_IIS;
 
 	$structure = get_option('permalink_structure');
 	$prettyurls = ('' != $structure);
+
+	// Support IIS index.php/ prefixed permalinks
+	if ( $is_IIS && 0 === strpos($structure,'/index.php/') )
+		$path[] = 'index.php';
 
 	$path[] = Storefront::slug('catalog');
 

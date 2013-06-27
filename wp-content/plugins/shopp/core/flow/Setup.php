@@ -245,6 +245,11 @@ class Setup extends AdminController {
 				$baseop['country'] = $country;
 				$baseop['zone'] = $zone;
 				$baseop['currency']['format'] = scan_money_format($baseop['currency']['format']);
+				if ( is_array($baseop['currency']['format']) ) {
+					$keys = array_keys($baseop['currency']['format']);
+					foreach ($keys as $key)
+						if (isset($baseop['currency'][$key])) $baseop['currency']['format'][$key] = $baseop['currency'][$key];
+				}
 
 				shopp_set_setting('tax_inclusive', // Automatically set the inclusive tax setting
 					(in_array($country,Lookup::tax_inclusive_countries()) ? 'on' : 'off')
@@ -276,6 +281,8 @@ class Setup extends AdminController {
 		$builtin_path = SHOPP_PATH.'/templates';
 		$theme_path = sanitize_path(STYLESHEETPATH.'/shopp');
 
+		$term_recount = false;
+
 		if (!empty($_POST['save'])) {
 			check_admin_referer('shopp-settings-presentation');
 			$updated = __('Shopp presentation settings saved.','Shopp');
@@ -289,9 +296,21 @@ class Setup extends AdminController {
 
 			if (empty($_POST['settings']['catalog_pagination']))
 				$_POST['settings']['catalog_pagination'] = 0;
+
+			// Recount terms when this setting changes
+			if ( isset($_POST['settings']['outofstock_catalog']) &&
+				$_POST['settings']['outofstock_catalog'] != shopp_setting('outofstock_catalog')) {
+				$term_recount = true;
+			}
+
 			$this->settings_save();
 		}
 
+		if ($term_recount) {
+			$taxonomy = ProductCategory::$taxon;
+			$terms = get_terms( $taxonomy, array('hide_empty' => 0,'fields'=>'ids') );
+			wp_update_term_count_now( $terms, $taxonomy );
+		}
 
 		// Copy templates to the current WordPress theme
 		if (!empty($_POST['install'])) {
@@ -410,9 +429,6 @@ class Setup extends AdminController {
 		if ( !(current_user_can('manage_options') && current_user_can('shopp_settings_shipping')) )
 			wp_die(__('You do not have sufficient permissions to access this page.'));
 
-
-		global $Shopp;
-
 		$sub = 'settings';
 		if (shopp_setting_enabled('shipping')) $sub = 'rates';
 		if ( isset($_GET['sub']) && in_array( $_GET['sub'],array_keys($this->subscreens) ) )
@@ -423,12 +439,25 @@ class Setup extends AdminController {
 
 			$_POST['settings']['order_shipfee'] = floatvalue($_POST['settings']['order_shipfee']);
 
+			// Recount terms when this setting changes
+			if ( isset($_POST['settings']['inventory']) &&
+				$_POST['settings']['inventory'] != shopp_setting('inventory')) {
+				$term_recount = true;
+			}
+
 	 		$this->settings_save();
 			$updated = __('Shipping settings saved.','Shopp');
 		}
 
 		// Handle ship rates UI
 		if ('rates' == $sub && 'on' == shopp_setting('shipping')) return $this->shiprates();
+
+
+		if ($term_recount) {
+			$taxonomy = ProductCategory::$taxon;
+			$terms = get_terms( $taxonomy, array('hide_empty' => 0,'fields'=>'ids') );
+			wp_update_term_count_now( $terms, $taxonomy );
+		}
 
 		$base = shopp_setting('base_operations');
 		$regions = Lookup::regions();
@@ -442,7 +471,7 @@ class Setup extends AdminController {
 		unset($countries,$regions);
 
 		$carrierdata = Lookup::shipcarriers();
-		$serviceareas = array('*',$base['country']);
+		$serviceareas = array('*',substr($base['country'],0,2));
 		foreach ($carrierdata as $c => $record) {
 			if (!in_array($record->areas,$serviceareas)) continue;
 			$carriers[$c] = $record->name;
@@ -771,6 +800,7 @@ class Setup extends AdminController {
 		if (isset($_POST['editing'])) {
 			// Resort taxes from generic to most specific
 			usort($rates,array($this,'taxrates_sorting'));
+			$rates = stripslashes_deep($rates);
 			shopp_set_setting('taxrates',$rates);
 		}
 		if (isset($_POST['addrate'])) $edit = count($rates);
@@ -1211,7 +1241,7 @@ class Setup extends AdminController {
 	function settings_save () {
 		if (empty($_POST['settings']) || !is_array($_POST['settings'])) return false;
 		foreach ($_POST['settings'] as $setting => $value)
-			shopp_set_setting($setting,$value);
+			shopp_set_setting($setting,stripslashes_deep($value));
 	}
 
 } // END class Setup

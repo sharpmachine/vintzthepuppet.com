@@ -9,18 +9,18 @@
  * ./wp-content/plugins/shopp/shipping/
  *
  * @author Jonathan Davis
- * @version 1.2.1
- * @copyright Ingenesis Limited, 26 February, 2009
+ * @version 1.2.7
+ * @copyright Ingenesis Limited, February, 2009 - 2013
  * @package shopp
- * @since 1.2
+ * @since 1.2.4
  * @subpackage USPSRates
  *
- * $Id: USPSRates.php 18 2012-03-27 16:07:33Z jond $
  **/
 
 class USPSRates extends ShippingFramework implements ShippingModule {
 
 	const APIURL = 'http://production.shippingapis.com/ShippingAPI.dll';
+	const TESTURL = 'http://testing.shippingapis.com/ShippingAPITest.dll';
 
 	var $dimensions = true;
 	var $weight = 0;
@@ -30,51 +30,54 @@ class USPSRates extends ShippingFramework implements ShippingModule {
 	var $singular = true;	// Module can only be used once
 	var $realtime = true;	// Provides real-time rates
 
-	/* Test URL */
-	// var $url = 'http://testing.shippingapis.com/ShippingAPITest.dll';
+	private $services = array(
+		// Domestic Services
+		'FirstClass'     => 'First-Class Mail&reg;',
+		'Express'        => 'Express Mail&reg;',
+		'Priority'       => 'Priority Mail&reg;',
+		'Standard'       => 'Standard Mail&reg;',
+		'Media'          => 'Media Mail&reg;',
+		'Library'        => 'Library Mail&reg;',
 
-	var $services = array(
-		"d0" => "First-Class",
-		"d1" => "Priority Mail",
-		"d2" => "Express Mail Hold for Pickup",
-		"d3" => "Express Mail PO to Addressee",
-		"d4" => "Parcel Post",
-		"d5" => "Bound Printed Matter",
-		"d6" => "Media Mail",
-		"d7" => "Library",
-		"d12" => "First-Class Postcard Stamped",
-		"d13" => "Express Mail Flat-Rate Envelope",
-		"d16" => "Priority Mail Flat-Rate Envelope",
-		"d17" => "Priority Mail Flat-Rate Boxes",
-		"d18" => "Priority Mail Keys and IDs",
-		"d19" => "First-Class Keys and IDs",
-		"d22" => "Priority Mail Flat-Rate Large Box",
-		"d23" => "Express Mail Sunday/Holiday",
-		"d25" => "Express Mail Flat-Rate Envelope Sunday/Holiday",
-		"d27" => "Express Mail Flat-Rate Envelope Hold for Pickup",
-		"d28" => "Priority Mail Small Flat-Rate Box",
-		"i1" => "Express Mail International",
-		"i2" => "Priority Mail International",
-		"i4" => "Global Express Guaranteed",
-		"i5" => "Global Express Guaranteed Document used",
-		"i6" => "Global Express Guaranteed Non-Document Rectangular",
-		"i7" => "Global Express Guaranteed Non-Document Non-Rectangular",
-		"i8" => "Priority Mail International Flat Rate Envelope",
-		"i9" => "Priority Mail International Flat Rate Box",
-		"i10" => "Express Mail International Flat Rate Envelope",
-		"i11" => "Priority Mail International Large Flat Rate Box",
-		"i12" => "Global Express Guaranteed Envelope",
-		"i13" => "First Class Mail International Letters",
-		"i14" => "First Class Mail International Flats",
-		"i15" => "First Class Mail International Package",
-		"i16" => "Priority Mail International Small Flat-Rate Box",
-		"i21" => "International PostCards"
+		// International Services
+		'GXG' => 'Global Express Guaranteed&reg;',
+		'ExpressIntl'    => 'Express Mail&reg; International',
+		'PriorityIntl'   => 'Priority Mail&reg; International',
+		'FirstClassIntl' => 'First-Class Package International Service&#153;'
+	);
+
+	// Map the service IDs to internal service keys
+	private $mapdomestic = array(
+		'0' => 'FirstClass',
+		'1' => 'Priority',
+		'2' => 'Express',
+		'3' => 'Standard',
+		'5' => 'Standard',
+		'6' => 'Media',
+		'7' => 'Library'
+	);
+
+	private $mapintl = array(
+		'ExpressIntl'    => array( '1', '10' ),
+		'PriorityIntl'   => array( '2', '8', '9', '11', ),
+		'GXG'            => array( '4', '5', '6', '7', '12' ),
+		'FirstClassIntl' => array( '13', '14', '15' )
+	);
+
+	private $sizes = array(
+		'length' =>	array( 'min' => 1, 'max' => false, 'unit' => 'in' ),
+		'width'	 => array( 'min' => 1, 'max' => false, 'unit' => 'in' ),
+		'height' => array( 'min' => 1, 'max' => false, 'unit' => 'in' ),
+		'girth'  => array( 'min' => 1, 'max' => false, 'unit' => 'in' ),
+		'weight' => array( 'min' => 0, 'max' => 70,    'unit' => 'lb' )
 	);
 
 	function __construct () {
 		parent::__construct();
 
 		$this->setup('userid','postcode');
+
+		$this->upgrade();
 
 		add_action('shipping_service_settings',array($this,'settings'));
 		add_action('shopp_verify_shipping_services',array($this,'verify'));
@@ -90,110 +93,138 @@ class USPSRates extends ShippingFramework implements ShippingModule {
 	}
 
 	function methods () {
-		if ($this->base['country'] != "US") return array(); // Require base of operations in USA
+		if ( 'US' != substr($this->base['country'],0,2) ) return array(); // Require base of operations in USA
 		return __('USPS Rates','Shopp');
 	}
 
-	function calculate ($options,$Order) {
+	function calculate (&$options,$Order) {
 		// Don't get an estimate without a postal code
-		if (empty($Order->Shipping->postcode)) return $options;
+		if (!$this->international() && empty($Order->Shipping->postcode)) return $options;
 
 		$request = $this->build($Order->Shipping->postcode, $Order->Shipping->country);
 		$Response = $this->send($request);
-		if (!$Response) {
+
+		if ( ! $Response) {
 			new ShoppError(__('Shipping options and rates are not available from USPS. Please try again.','Shopp'),'usps_rate_error',SHOPP_TRXN_ERR);
 			return false;
 		}
+
 		if ( $Response->tag('Error') ) {
-			new ShoppError('USPS &mdash; '.$Response->content('Description'),'usps_rate_error',SHOPP_TRXN_ERR);
+			$errors = (array)$Response->content('Description');
+			new ShoppError('USPS &mdash; '.$errors[0],'usps_rate_error',SHOPP_TRXN_ERR);
 			return false;
 		}
 
 		$estimate = false;
-		if ($Order->Shipping->country == $this->base['country']) $type = 'domestic';
-		else $type = 'intl';
+		$type = $this->international() ? 'intl' : 'domestic';
 
-		if ('domestic' == $type) $Estimates = $Response->tag('Postage');
-		else $Estimates = $Response->tag('Service');
+		// Get package estimates
+		$Packages = $Response->tag('Package');
+		if ( empty($Packages->dom) ) return $options;
 
-		while ($rated = $Estimates->each()) {
-			$delivery = '5d-7d';
-			$mailsvc = $rated->content('MailService');
+		// Iterate over each package
+		while ( $Package = $Packages->each() ) {
 
-			if ('domestic' == $type) {
-				$service = substr($type,0,1).$rated->attr(false,'CLASSID');
-				$amount = $rated->content('Rate');
-				$delivery = false;
-			} else {
-				$service = substr($type,0,1).$rated->attr(false,'ID');
-				$amount = $rated->content('Postage');
-				if ($SvcCommitments = $rated->content('SvcCommitments'))
-					$delivery = $this->delivery($SvcCommitments);
-			}
+			// Get the service estimates for each package
+			$Estimates = ( 'intl' == $type) ? $Package->tag('Service') : $Package->tag('Postage') ;
+			if ( empty($Estimates->dom) ) continue;
 
-			if (is_array($this->settings['services']) && in_array($service,$this->settings['services']) ) {
-				$slug = sanitize_title_with_dashes("$this->module-$service");
+			// Iterate over the service rates found and convert them to Shopp ShippingOption entries
+			while ( $rated = $Estimates->each() ) {
+				$delivery = '5d-7d';
 
-				// The following only affects First-Class service as it is the only
-				// service class with multiple rates - it forces use of the first
-				// service class rate (historically the First-Class "Parcel/Package" service),
-				// ignoring the other First-Class rates for envelopes/letters. We have to use
-				// the Parcel rate as a catch all since USPS API does not intelligently filter out
-				// package type services that will not accommodate the product dimensions.
-				if (isset($options[$slug])) continue; // Prevent overwriting same-class rates
+				if ('domestic' == $type) {
+					$serviceid = $rated->attr(false,'CLASSID');
+					$servicekey = $this->mapdomestic[ $serviceid ];
+					$amount = $rated->content('Rate');
+					$delivery = false;
+				} else {
+					$serviceid = $rated->attr(false,'ID');
 
-				$rate = array();
-				$rate['name'] = $this->services[$service];
-				$rate['slug'] = $slug;
-				$rate['amount'] = $amount;
-				$rate['delivery'] = $delivery;
-				$options[$slug] = new ShippingOption($rate);
-			}
-		}
+					$intlcode = false;
+					foreach ($this->mapintl as $intlcode => $ids)
+						if ( in_array($serviceid,$ids) ) break;
+					$servicekey = $intlcode;
+
+					$amount = $rated->content('Postage');
+					if ($SvcCommitments = $rated->content('SvcCommitments'))
+						$delivery = $this->delivery($SvcCommitments);
+				}
+
+				if ( is_array($this->settings['services']) && in_array($servicekey,$this->settings['services']) ) {
+					$slug = sanitize_title_with_dashes("$this->module-$servicekey");
+
+					if ( ! isset($options[ $slug ]) ) {	// New service rate, add it to the stack
+						// We capture the first service of a class of services for rate estimates
+						$rate = array();
+						$rate['name'] = $this->services[$servicekey];
+						$rate['id'] = $serviceid;		// Capture the service id
+						$rate['slug'] = $slug;
+						$rate['amount'] = $amount;
+						$rate['delivery'] = $delivery;
+						$options[$slug] = new ShippingOption($rate);
+					} else { // Rate for the service already exists, add the extra package postage to the service rate
+						// Make sure the service id of this rate is the same as the first rate captured
+						if ( $serviceid == $options[ $slug ]->id )
+							$options[ $slug ]->amount += $amount;
+					}
+
+				} // end if (is_array($this->settings['services']))
+			} // end while ( $rated = $Estimates->each() )
+
+		} // end while ( $Package = $Packages->each() )
 
 		return $options;
+
 	}
 
 	function build ($postcode,$country) {
-		$type = 'RateV4'; // Domestic shipping rates
-		if ($country != $this->base['country']) {
-			global $Shopp;
-			$type = 'IntlRate';
+
+		$type = 'RateV4'; // request domestic shipping rates
+		if ( $this->international() ) {	// request international shipping rates
+			$type = 'IntlRateV2';
 			$countries = Lookup::countries();
-			if ($country == "GB") $country = $countries[$country]['name'].' (Great Britain)';
+			if ( 'GB' == $country ) $country = $countries[$country]['name'].' (Great Britain)';
 			else $country = $countries[$country]['name'];
-			$country = substr($country,0,2); // Ensure use of only the 2-letter country code
 		}
 
 		$_ = array('API='.$type.'&XML=<?xml version="1.0" encoding="utf-8"?>');
 		$_[] = '<'.$type.'Request USERID="'.$this->settings['userid'].'">';
-
+		$_[] = '<Revision>2</Revision>';
 		$count = 1;
 		while ( $this->packager->packages() ) {
 			$pkg = $this->packager->package();
 
 			$pounds = $ounces = 0;
-			$weight = $pkg->weight();
-			$weight = convert_unit($weight,'lb'); // Ensure we're working in pounds
-
-			list($pounds,$ounces) = explode(".",$weight);
-			$ounces = ceil( ( $weight - $pounds ) * 16 );
-			// echo "pounds: $pounds, ounces: $ounces".BR;
+			list($pounds,$ounces) = $this->size($pkg->weight(),'weight');
 
 			$_[] = '<Package ID="'.$count++.'">';
-				if ($type == "IntlRate") {
+				$large = ( max(
+					$this->size($pkg->length(), 'length'),
+					$this->size($pkg->width(), 'width'),
+					$this->size($pkg->height(), 'height')
+				) > 12);
+
+				if ( $this->international() ) { // International Rates
+
 					$_[] = '<Pounds>'.$pounds.'</Pounds>';
 					$_[] = '<Ounces>'.$ounces.'</Ounces>';
-					$_[] = '<Machinable>TRUE</Machinable>';
+					$_[] = '<Machinable>True</Machinable>';
 					$_[] = '<MailType>Package</MailType>';
 					$_[] = '<ValueOfContents>'.$pkg->value().'</ValueOfContents>';
 					$_[] = '<Country>'.$country.'</Country>';
-					if ( $pkg->length() + $pkg->width() + $pkg->height() > 0 ) {
-						$_[] = '<GXG><Length>'.convert_unit($pkg->length(), 'in').'</Length>';
-						$_[] = '<Width>'.convert_unit($pkg->width(), 'in').'</Width>';
-						$_[] = '<Height>'.convert_unit($pkg->height(), 'in').'</Height></GXG>';
-					}
-				} else {
+					$_[] = '<Container>' . ( $large ? 'Rectangular' : '' ) . '</Container>';
+					$_[] = '<Size>' . ( $large ? 'LARGE' : 'REGULAR' ) . '</Size>';
+
+					$_[] = '<Width>' . $this->size( $pkg->width(), 'width' ) . '</Width>';
+					$_[] = '<Length>' . $this->size( $pkg->length(), 'length' ) . '</Length>';
+					$_[] = '<Height>' . $this->size( $pkg->height(), 'height' ) . '</Height>';
+					$_[] = '<Girth>' . $this->size( 0, 'girth' ) . '</Girth>';
+
+					$_[] = '<CommercialFlag>N</CommercialFlag>';
+
+				} else {	// Domestic Rates
+
 					$_[] = '<Service>ALL</Service>';
 					$_[] = '<FirstClassMailType>PARCEL</FirstClassMailType>';
 					$_[] = '<ZipOrigination>'.substr($this->settings['postcode'],0,5).'</ZipOrigination>';
@@ -201,14 +232,17 @@ class USPSRates extends ShippingFramework implements ShippingModule {
 					$_[] = '<Pounds>'.$pounds.'</Pounds>';
 					$_[] = '<Ounces>'.$ounces.'</Ounces>';
 					$_[] = '<Container/>';
-					$_[] = '<Size>REGULAR</Size>';
-					if ( $pkg->length() + $pkg->width() + $pkg->height() > 0 ) {
-						$_[] = '<Width>'.convert_unit($pkg->width(), 'in').'</Width>';
-						$_[] = '<Length>'.convert_unit($pkg->length(), 'in').'</Length>';
-						$_[] = '<Height>'.convert_unit($pkg->height(), 'in').'</Height>';
+					$_[] = '<Size>' . ( $large ? 'LARGE' : 'REGULAR' ) . '</Size>';
+					if ($large) {
+						$_[] = '<Width>' . $this->size( $pkg->width(), 'width' ) . '</Width>';
+						$_[] = '<Length>' . $this->size( $pkg->length(), 'length' ) . '</Length>';
+						$_[] = '<Height>' . $this->size( $pkg->height(), 'height' ) . '</Height>';
+						$_[] = '<Girth>' . $this->size( 0, 'girth' ) . '</Girth>';
 					}
-					$_[] = '<Machinable>true</Machinable>';
+					$_[] = '<Machinable>True</Machinable>';
+
 				}
+
 			$_[] = '</Package>';
 		}
 		$_[] = '</'.$type.'Request>';
@@ -216,7 +250,44 @@ class USPSRates extends ShippingFramework implements ShippingModule {
 		return join("\n",apply_filters('shopp_usps_request',$_));
 	}
 
-	function delivery ($timeframe) {
+	function size ( $value = 0, $size='weight' ) {
+		if ( ! isset($this->sizes[ $size ]) ) return $value;
+
+		$dimension = convert_unit($value,$this->sizes[$size]['unit']);
+
+		$method = "size$size";
+		if ( method_exists($this,$method) ) $dimension = $this->$method($dimension);
+		else $dimension = $this->sized($dimension,$size);
+
+		return $dimension;
+	}
+
+	function sized ( $value, $size ) {
+		if ( ! isset($this->sizes[ $size ]) ) return $value;
+
+		$value = (float)$value;
+
+		if ($value < $this->sizes[$size]['min']) $value = (float)$this->sizes[$size]['min'];
+
+		return ceil($value);
+	}
+
+	function sizeweight ( $value ) {
+		$value = (float)$value;
+
+		if ($value < $this->sizes['weight']['min']) $value = (float)$this->sizes['weight']['min'];
+
+		$pounds = intval($value);
+		$ounces = ceil( ($value - $pounds) * 16 );
+
+		return array($pounds,$ounces);
+	}
+
+	function international () { // TODO: Move to framework
+		return (substr(ShoppOrder()->Shipping->country,0,2) != $this->base['country']);
+	}
+
+	function delivery ( $timeframe ) {
 		list($start,$end) = sscanf($timeframe,"%d - %d Days");
 		$days = $start.'d'.(!empty($end)?'-'.$end.'d':'');
 		if (empty($start)) $days = "5d-15d";
@@ -225,7 +296,6 @@ class USPSRates extends ShippingFramework implements ShippingModule {
 
 	function verify () {
 		if (!$this->activated()) return;
-
 
 		$this->weight = 1;
 		$Item = new stdClass;
@@ -239,7 +309,10 @@ class USPSRates extends ShippingFramework implements ShippingModule {
 
 		$request = $this->build('10022','US');
 		$Response = $this->send($request);
-		if ($Response->tag('Error')) new ShoppError($Response->content('Description'),'usps_verify_auth',SHOPP_ADDON_ERR);
+		if ( $Response->tag('Error') ) {
+			$errors = $Response->content('Description');
+			new ShoppError(join(' ',$errors),'usps_verify_auth',SHOPP_ADDON_ERR);
+		}
 	}
 
 	function send ($data) {
@@ -269,6 +342,34 @@ class USPSRates extends ShippingFramework implements ShippingModule {
 			'size' => 16,
 			'label' => __('Your postal code','Shopp')
 		));
+
+	}
+
+	function upgrade () {
+		// Migrate old settings
+		if ( 'd' == $this->settings['services'][0]{0} || 'i' == $this->settings['services'][0]{0} ) {
+			$services = array();
+			foreach ($this->settings['services'] as $service) {
+				$type = $service{0};
+				$id = substr($service,1);
+
+				if ( 'd' == $type && isset($this->mapdomestic[ $id ]) )
+						$services[] = $this->mapdomestic[ $id ];
+				elseif ( 'i' == $type ) {
+					foreach ( $this->mapintl as $key => $ids ) {
+						if ( in_array($id,$ids) ) {
+							$services[] = $key;
+							break;
+						}
+					}
+
+				}
+			}
+			// Flip to merge matching keys, flip back to normal array
+			$services = array_flip(array_flip($services));
+			$this->settings['services'] = $services;
+			shopp_set_setting($this->module,$this->settings);
+		}
 
 	}
 

@@ -1,3 +1,7 @@
+<?php
+	$subs = apply_filters('shopp_products_subsubsub',$subs);
+	if (empty($subs)) return;
+?>
 <ul class="subsubsub"><?php
 	$links = array();
 	foreach($subs as $name => $sub) {

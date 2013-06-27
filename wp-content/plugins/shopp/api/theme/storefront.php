@@ -238,9 +238,6 @@ class ShoppCatalogThemeAPI implements ShoppAPI {
 			$breadcrumb += array($pages['confirm']['title'] => shoppurl(false,'confirm'));
 		} elseif (is_thanks_page()) {
 			$breadcrumb += array($pages['thanks']['title'] => shoppurl(false,'thanks'));
-		} elseif (is_shopp_collection()) {
-			// collections
-			$breadcrumb[ ShoppCollection()->name ] = shopp('collection','get-url');
 		} elseif (is_shopp_taxonomy()) {
 			$taxonomy = ShoppCollection()->taxonomy;
 			$ancestors = array_reverse(get_ancestors(ShoppCollection()->id,$taxonomy));
@@ -249,10 +246,18 @@ class ShoppCatalogThemeAPI implements ShoppAPI {
 				$breadcrumb[ $term->name ] = get_term_link($term->slug,$taxonomy);
 			}
 			$breadcrumb[ shopp('collection','get-name') ] = shopp('collection','get-url');
+		} elseif (is_shopp_collection()) {
+			// collections
+			$breadcrumb[ ShoppCollection()->name ] = shopp('collection','get-url');
 		} elseif (is_shopp_product()) {
 			$categories = get_the_terms(ShoppProduct()->id,ProductCategory::$taxon);
 			if ( $categories ) {
 				$term = array_shift($categories);
+				$ancestors = array_reverse(get_ancestors($term->term_id,ProductCategory::$taxon));
+				foreach ($ancestors as $ancestor) {
+					$parent_term = get_term($ancestor,ProductCategory::$taxon);
+					$breadcrumb[ $parent_term->name ] = get_term_link($parent_term->slug,ProductCategory::$taxon);
+				}
 				$breadcrumb[ $term->name ] = get_term_link($term->slug,$term->taxonomy);
 			}
 			$breadcrumb[ shopp('product','get-name') ] = shopp('product','get-url');
@@ -294,13 +299,13 @@ class ShoppCatalogThemeAPI implements ShoppAPI {
 	static function category ($result, $options, $O) {
 		global $Shopp;
 		$Storefront = ShoppStorefront();
-
+		$reset = null;
 		if (isset($options['name'])) ShoppCollection( new ProductCategory($options['name'],'name') );
 		else if (isset($options['slug'])) ShoppCollection( new ProductCategory($options['slug'],'slug') );
 		else if (isset($options['id'])) ShoppCollection( new ProductCategory($options['id']) );
 
 		if (isset($options['reset']))
-			return ( is_a($Storefront->Requested, 'ProductCollection') ? ( ShoppCollection($Storefront->Requested) ) : false );
+			return ( is_a($Storefront->Requested, 'ProductCollection') ? ( ShoppCollection($Storefront->Requested) ) : ShoppCollection($reset) );
 		if (isset($options['title'])) ShoppCollection()->name = $options['title'];
 		if (isset($options['show'])) ShoppCollection()->loading['limit'] = $options['show'];
 		if (isset($options['pagination'])) ShoppCollection()->loading['pagination'] = $options['pagination'];
@@ -360,8 +365,8 @@ class ShoppCatalogThemeAPI implements ShoppAPI {
 		$options = array_merge($defaults,$options);
 		extract($options, EXTR_SKIP);
 
-		$taxonomy = 'shopp_category';
-		$termargs = array('hide_empty' => 0,'fields'=>'id=>parent');
+		$taxonomy = ProductCategory::$taxon;
+		$termargs = array('hide_empty' => 0,'fields'=>'id=>parent','orderby'=>$orderby,'order'=>$order);
 
 		$baseparent = 0;
 		if (str_true($section)) {
@@ -387,6 +392,7 @@ class ShoppCatalogThemeAPI implements ShoppAPI {
 		$exclude = explode(",",$exclude);
 		$classes = ' class="shopp-categories-menu'.(empty($class)?'':' '.$class).'"';
 		$wraplist = str_true($wraplist);
+		$hierarchy = str_true($hierarchy);
 
 		if (str_true($dropdown)) {
 			if (!isset($default)) $default = __('Select category&hellip;','Shopp');
@@ -405,12 +411,12 @@ class ShoppCatalogThemeAPI implements ShoppAPI {
 					if ($category->count == 0 && !isset($category->smart) && !$category->_children && ! str_true($showall)) continue; // Only show categories with products
 					if ($levellimit && $category->level >= $levellimit) continue;
 
-					if (str_true($hierarchy) && $category->level > $level) {
+					if ($hierarchy && $category->level > $level) {
 						$parent = &$previous;
 						if (!isset($parent->path)) $parent->path = '/'.$parent->slug;
 					}
 
-					if (str_true($hierarchy))
+					if ($hierarchy)
 						$padding = str_repeat("&nbsp;",$category->level*3);
 					$term_id = $category->term_id;
 					$link = get_term_link( (int) $category->term_id, $category->taxonomy);
@@ -433,6 +439,8 @@ class ShoppCatalogThemeAPI implements ShoppAPI {
 
 			$string .= '</select></form>';
 		} else {
+			$depth = 0;
+
 			$string .= $title;
 			if ($wraplist) $string .= '<ul'.$classes.'>';
 			$Collection = ShoppCollection();
@@ -448,23 +456,20 @@ class ShoppCatalogThemeAPI implements ShoppAPI {
 
 				if (!empty($category->id) && in_array($category->id,$exclude)) continue; // Skip excluded categories
 				if ($levellimit && $category->level >= $levellimit) continue;
-				if (str_true($hierarchy) && $category->level > $depth) {
+				if ($hierarchy && $category->level > $depth) {
 					$parent = &$previous;
 					if (!isset($parent->path)) $parent->path = $parent->slug;
 					if (substr($string,-5,5) == "</li>") // Keep everything but the
 						$string = substr($string,0,-5);  // last </li> to re-open the entry
 					$active = '';
 
-					if (isset($Collection->uri) && !empty($parent->slug)
-							&& preg_match('/(^|\/)'.$parent->path.'(\/|$)/',$Collection->uri)) {
-						$active = ' active';
-					}
+					if ( $Collection->parent == $parent->id ) $active = ' active';
 
 					$subcategories = '<ul class="children'.$active.'">';
 					$string .= $subcategories;
 				}
 
-				if (str_true($hierarchy) && $category->level < $depth) {
+				if ($hierarchy && $category->level < $depth) {
 					for ($i = $depth; $i > $category->level; $i--) {
 						if (substr($string,strlen($subcategories)*-1) == $subcategories) {
 							// If the child menu is empty, remove the <ul> to avoid breaking standards
@@ -486,26 +491,32 @@ class ShoppCatalogThemeAPI implements ShoppAPI {
 				$total = '';
 				if ( str_true($products) && $category->count > 0 ) $total = ' <span>('.$category->count.')</span>';
 
-				$current = '';
+				$classes = array();
 				if (isset($Collection->slug) && $Collection->slug == $category->slug)
-					$current = ' class="current"';
+					$classes[] = 'current';
+
+				if (isset($Collection->parent) && $Collection->parent == $category->id)
+					$classes[] = 'current-parent';
+
+				if ( empty($classes) ) $classes = '';
+				else $classes = ' class="'.join(' ',$classes).'"';
 
 				$listing = '';
 
 				if (!empty($link) && ($category->count > 0 || isset($category->smart) || str_true($linkall)))
-					$listing = '<a href="'.$link.'"'.$current.'>'.$category->name.($linkcount?$total:'').'</a>'.(!$linkcount?$total:'');
+					$listing = '<a href="'.$link.'"'.$classes.'>'.esc_html($category->name).($linkcount?$total:'').'</a>'.(!$linkcount?$total:'');
 				else $listing = $category->name;
 
 				if (str_true($showall) ||
 					$category->count > 0 ||
 					isset($category->smart) ||
 					$category->_children)
-					$string .= '<li'.$current.'>'.$listing.'</li>';
+					$string .= '<li'.$classes.'>'.$listing.'</li>';
 
 				$previous = &$category;
 				$depth = $category->level;
 			}
-			if (str_true($hierarchy) && $depth > 0)
+			if ($hierarchy && $depth > 0)
 				for ($i = $depth; $i > 0; $i--) {
 					if (substr($string,strlen($subcategories)*-1) == $subcategories) {
 						// If the child menu is empty, remove the <ul> to avoid breaking standards
@@ -539,8 +550,17 @@ class ShoppCatalogThemeAPI implements ShoppAPI {
 
 	static function has_categories ($result, $options, $O) {
 		$showsmart = isset($options['showsmart'])?$options['showsmart']:false;
-		if (empty($O->categories)) $O->load_categories(array('where'=>'true'),$showsmart);
-		if (count($O->categories) > 0) return true; else return false;
+		if ( empty($O->categories) ) $O->load_categories(array('where'=>'true'),$showsmart);
+		else { // Make sure each entry is a valid ProductCollection to prevent fatal errors @bug #2017
+			foreach ($O->categories as $id => $term) {
+				if (  $Category instanceof ProductCollection ) continue;
+				$ProductCategory = new ProductCategory();
+				$ProductCategory->populate($term);
+				$O->categories[$id] = $ProductCategory;
+			}
+			return true;
+		}
+		if ( count($O->categories) > 0 ) return true; else return false;
 	}
 
 	static function is_account ($result, $options, $O) { return is_account_page(); }
@@ -560,55 +580,57 @@ class ShoppCatalogThemeAPI implements ShoppAPI {
 	static function is_taxonomy ($result, $options, $O) { return is_shopp_taxonomy(); }
 
 	static function orderby_list ($result, $options, $O) {
-		$Collection = ShoppCollection();
-		if (isset($Collection->controls)) return false;
-		if (isset($Collection->loading['order']) || isset($Collection->loading['sortorder'])) return false;
 
+		$Collection = ShoppCollection();
+		$Storefront = ShoppStorefront();
+
+		// Some internals can suppress this control
+		if ( isset($Collection->controls) ) return false;
+		if ( isset($Collection->loading['order']) || isset($Collection->loading['sortorder']) ) return false;
+
+		$defaultsort = array(
+			'title',
+			shopp_setting('default_product_order'),
+			isset($Storefront->browsing['sortorder']) ? $Storefront->browsing['sortorder'] : false
+		);
+		foreach ($defaultsort as $setting)
+			if ( ! empty($setting)) $default = $setting;
+
+		// Setup defaults
+		$options = wp_parse_args($options,array(
+			'dropdown' => false,
+			'default' => $default,
+			'title' => ''
+		));
+		extract($options,EXTR_SKIP);
+
+		// Get the sort option labels
 		$menuoptions = ProductCategory::sortoptions();
 		// Don't show custom product order for smart categories
 		if ($Collection->smart) unset($menuoptions['custom']);
 
-		$title = "";
-		$string = "";
-		$dropdown = isset($options['dropdown'])?$options['dropdown']:true;
-		$default = shopp_setting('default_product_order');
-		if (empty($default)) $default = "title";
-
-		if (isset($options['default'])) $default = $options['default'];
-		if (isset($options['title'])) $title = $options['title'];
-
-		if (value_is_true($dropdown)) {
-			$Storefront = ShoppStorefront();
-			if (isset($Storefront->browsing['sortorder']))
-				$default = $Storefront->browsing['sortorder'];
-			$string .= $title;
-			$string .= '<form action="'.esc_url($_SERVER['REQUEST_URI']).'" method="get" id="shopp-'.$Collection->slug.'-orderby-menu">';
+		$_ = array();
+		$request = $_SERVER['REQUEST_URI'];
+		if ( str_true($dropdown) ) {
+			$_[] = $title;
+			$_[] = '<form action="'.esc_url($request).'" method="get" id="shopp-'.$Collection->slug.'-orderby-menu">';
 			if ( '' == get_option('permalink_structure') ) {
 				foreach ($_GET as $key => $value)
-					if ($key != 's_ob') $string .= '<input type="hidden" name="'.$key.'" value="'.$value.'" />';
+					if ($key != 'sort') $_[] = '<input type="hidden" name="'.$key.'" value="'.$value.'" />';
 			}
-			$string .= '<select name="s_so" class="shopp-orderby-menu">';
-			$string .= menuoptions($menuoptions,$default,true);
-			$string .= '</select>';
-			$string .= '</form>';
+			$_[] = '<select name="sort" class="shopp-orderby-menu">';
+			$_[] = menuoptions($menuoptions,$default,true);
+			$_[] = '</select>';
+			$_[] = '</form>';
 		} else {
-			$link = "";
-			$query = "";
-			if (strpos($_SERVER['REQUEST_URI'],"?") !== false)
-				list($link,$query) = explode("\?",$_SERVER['REQUEST_URI']);
-			$query = $_GET;
-			unset($query['s_ob']);
-			$query = http_build_query($query);
-			if (!empty($query)) $query .= '&';
-
-			foreach($menuoptions as $value => $option) {
-				$label = $option;
-				$href = esc_url(add_query_arg(array('s_so' => $value),$link));
-				$string .= '<li><a href="'.$href.'">'.$label.'</a></li>';
+			foreach($menuoptions as $value => $label) {
+				$href = esc_url(add_query_arg(array('sort' => $value),$request));
+				$class = ($default == $value?' class="current"':'');
+				$_[] = '<li><a href="'.$href.'"'.$class.'>'.$label.'</a></li>';
 			}
-
 		}
-		return $string;
+
+		return join('',$_);
 	}
 
 	static function product ($result, $options, $O) {
@@ -998,6 +1020,13 @@ class ShoppCatalogThemeAPI implements ShoppAPI {
 		$page = current($Storefront->menus);
 		if (array_key_exists('url',$options)) return add_query_arg($page->request,'',shoppurl(false,'account'));
 		if (array_key_exists('action',$options)) return $page->request;
+		if (array_key_exists('classes',$options)) {
+			$classes = array($page->request);
+			if ($Storefront->account['request'] == $page->request) $classes[] = 'current';
+			return join(' ',$classes);
+		}
+		if (array_key_exists('current',$options) && $Storefront->account['request'] == $page->request)
+			return true;
 		return $page->label;
 	}
 

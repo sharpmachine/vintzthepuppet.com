@@ -158,6 +158,7 @@ class ShoppCustomerThemeAPI implements ShoppAPI {
 	}
 
 	static function billing_state ($result, $options, $O) {
+		return ShoppCheckoutThemeAPI::billing_state($result,$options,ShoppOrder());
 		$base = shopp_setting('base_operations');
 		$select_attrs = array('title','required','class','disabled','required','size','tabindex','accesskey');
 
@@ -389,8 +390,6 @@ class ShoppCustomerThemeAPI implements ShoppAPI {
 	}
 
 	static function order_lookup ($result, $options, $O) {
-		if ('none' != shopp_setting('account_system')) return true;
-
 		if (!empty($_POST['vieworder']) && !empty($_POST['purchaseid'])) {
 			ShoppPurchase( new Purchase((int)$_POST['purchaseid']) );
 			if (ShoppPurchase()->email == $_POST['email']) {
@@ -481,7 +480,10 @@ class ShoppCustomerThemeAPI implements ShoppAPI {
 		);
 		$options = array_merge($defaults,$options);
 		extract($options);
-		return '<input type="submit" name="shopp_registration" value="'.esc_attr($label).'" />';
+
+		$submit_attrs = array('title','class','value','disabled','tabindex','accesskey');
+
+		return '<input type="submit" name="shopp_registration" '.inputattrs($options,$submit_attrs).' />';
 	}
 
 	static function registration_errors ($result, $options, $O) {
@@ -567,6 +569,7 @@ class ShoppCustomerThemeAPI implements ShoppAPI {
 	}
 
 	static function shipping_state ($result, $options, $O) {
+		return ShoppCheckoutThemeAPI::shipping_state($result,$options,ShoppOrder());
 		$base = shopp_setting('base_operations');
 		$select_attrs = array('title','required','class','disabled','required','size','tabindex','accesskey');
 
@@ -620,7 +623,7 @@ class ShoppCustomerThemeAPI implements ShoppAPI {
 		if (ShoppStorefront()->checkout) {
 			$id .= "-checkout";
 			$string .= '<input type="hidden" name="redirect" value="checkout" />';
-		} else $string .= '<input type="hidden" name="redirect" value="'.shoppurl($request,'account',ShoppOrder()->security()).'" />';
+		} else $string .= '<input type="hidden" name="redirect" value="'.esc_attr(shoppurl($request,'account',ShoppOrder()->security())).'" />';
 		$string .= '<input type="submit" name="submit-login" id="'.$id.'"'.inputattrs($options).' />';
 		return $string;
 	}

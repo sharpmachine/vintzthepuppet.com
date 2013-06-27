@@ -261,7 +261,7 @@ class Warehouse extends AdminController {
 			'drafts' => 	array('label' => __('Drafts','Shopp'),		'where'=>array("p.post_status='draft'")),
 			'onsale' => 	array('label' => __('On Sale','Shopp'),		'where'=>array("s.sale='on' AND p.post_status != 'trash'")),
 			'featured' => 	array('label' => __('Featured','Shopp'),	'where'=>array("s.featured='on' AND p.post_status != 'trash'")),
-			'bestselling'=> array('label' => __('Bestselling','Shopp'),	'where'=>array("p.post_status!='trash'"),'order' => 'bestselling'),
+			'bestselling'=> array('label' => __('Bestselling','Shopp'),	'where'=>array("p.post_status!='trash'",BestsellerProducts::threshold()." < s.sold"),'order' => 'bestselling'),
 			'inventory' => 	array('label' => __('Inventory','Shopp'),	'where'=>array("s.inventory='on' AND p.post_status != 'trash'")),
 			'trash' => 		array('label' => __('Trash','Shopp'),		'where'=>array("p.post_status='trash'"))
 		);
@@ -282,7 +282,7 @@ class Warehouse extends AdminController {
 		$start = ($per_page * ($pagenum-1));
 
 		if (!empty($s)) {
-			$SearchResults = new SearchResults(array('search'=>$s,'load'=>array()));
+			$SearchResults = new SearchResults(array('search'=>$s,'published'=>'off','paged'=>-1));
 			$SearchResults->load();
 			$ids = array_keys($SearchResults->products);
 			$where[] = "p.ID IN (".join(',',$ids).")";
@@ -296,6 +296,19 @@ class Warehouse extends AdminController {
 				unset($joins[$wpdb->term_taxonomy]);
 				$joins[$wpdb->term_relationships] = "LEFT JOIN $wpdb->term_relationships AS tr ON (p.ID=tr.object_id)";
 				$where[] = 'tr.object_id IS NULL';
+			}
+		}
+
+		// Detect custom taxonomies
+		$taxonomies = array_intersect(get_object_taxonomies(Product::$posttype),array_keys($_GET));
+		if ( ! empty($taxonomies) ) {
+			foreach ($taxonomies as $n => $taxonomy) {
+				global $wpdb;
+				$term = get_term_by('slug',$_GET[ $taxonomy ],$taxonomy);
+				if ( ! empty($term->term_id) ) {
+					$joins[$wpdb->term_relationships.'_'.$n] = "INNER JOIN $wpdb->term_relationships AS tr$n ON (p.ID=tr$n.object_id)";
+					$joins[$wpdb->term_taxonomy.'_'.$n] = "INNER JOIN $wpdb->term_taxonomy AS tt$n ON (tr$n.term_taxonomy_id=tt$n.term_taxonomy_id AND tt$n.term_id=$term->term_id)";
+				}
 			}
 		}
 
@@ -325,16 +338,23 @@ class Warehouse extends AdminController {
 
 		$where = array_merge($where,$subs[$this->view]['where']);
 
+
 		$orderdirs = array('asc','desc');
 		if (in_array($order,$orderdirs)) $orderd = strtolower($order);
 		else $orderd = 'asc';
+
+		if (isset($subs[$this->view]['order'])) $order = $subs[$this->view]['order'];
+
+
 		switch ($orderby) {
 			case 'name': $order = 'title'; if ('desc' == $orderd) $order = 'reverse'; break;
 			case 'price': $order = 'lowprice'; if ('desc' == $orderd) $order = 'highprice'; break;
 			case 'date': $order = 'newest'; if ('desc' == $orderd) $order = 'oldest'; break;
-		}
 
-		if (isset($subs[$this->view]['order'])) $order = $subs[$this->view]['order'];
+			case 'sold': $ordercols = 's.sold '.$orderd; break;
+			case 'gross': $ordercols = 's.grossed '.$orderd; break;
+			case 'inventory': $ordercols = 's.stock '.$orderd; break;
+		}
 
 		if (in_array($this->view,array('onsale','featured','inventory')))
 			$joins[$ps] = "INNER JOIN $ps AS s ON p.ID=s.product";
@@ -350,11 +370,16 @@ class Warehouse extends AdminController {
 			// 'debug' => true
 		);
 
+		if ( isset($ordercols) ) {
+			unset($loading['order']);
+			$loading['orderby'] = $ordercols;
+		}
+
 		if ($is_inventory) { // Override for inventory products
 			$where[] = "(pt.context='product' OR pt.context='variation') AND pt.type != 'N/A'";
 			$loading = array(
 				'columns' => "pt.id AS stockid,IF(pt.context='variation',CONCAT(p.post_title,': ',pt.label),p.post_title) AS post_title,pt.sku AS sku,pt.stock AS stock",
-				'joins' => array($pt => "LEFT JOIN $pt AS pt ON p.ID=pt.product"),
+				'joins' => array_merge(array($pt => "LEFT JOIN $pt AS pt ON p.ID=pt.product"),$joins),
 				'where' => $where,
 				'groupby' => 'pt.id',
 				'order' => 'p.ID,pt.sortorder',
@@ -653,6 +678,13 @@ class Warehouse extends AdminController {
 				$price->saleprice += $price->saleprice*$taxrate;
 			}
 		}
+
+		do_action('add_meta_boxes', Product::$posttype, $Product);
+		do_action('add_meta_boxes_'.Product::$posttype, $Product);
+
+		do_action('do_meta_boxes', Product::$posttype, 'normal', $Product);
+		do_action('do_meta_boxes', Product::$posttype, 'advanced', $Product);
+		do_action('do_meta_boxes', Product::$posttype, 'side', $Product);
 
 		include(SHOPP_ADMIN_PATH."/products/editor.php");
 	}

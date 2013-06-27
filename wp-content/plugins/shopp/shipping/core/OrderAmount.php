@@ -11,7 +11,7 @@
  * @since 1.2
  * @subpackage OrderAmount
  *
- * $Id: OrderAmount.php 2825 2012-01-04 21:46:40Z jond $
+ * $Id: OrderAmount.php 3383 2012-11-16 18:29:19Z jond $
  **/
 
 class OrderAmount extends ShippingFramework implements ShippingModule {
@@ -23,7 +23,7 @@ class OrderAmount extends ShippingFramework implements ShippingModule {
 		return __('Order Amount Tiers','Shopp');
 	}
 
-	function calculate ($options,$Order) {
+	function calculate (&$options,$Order) {
 
 		foreach ($this->methods as $slug => $method) {
 
