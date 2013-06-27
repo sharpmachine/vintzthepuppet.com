@@ -9,7 +9,9 @@ if (class_exists('WPMenuEditor')){
 }
 
 //Load the "framework"
-require 'shadow_plugin_framework.php';
+$thisDirectory = dirname(__FILE__);
+require $thisDirectory . '/shadow_plugin_framework.php';
+require $thisDirectory . '/menu-item.php';
 
 if ( !class_exists('WPMenuEditor') ) :
 
@@ -45,7 +47,8 @@ class WPMenuEditor extends MenuEd_ShadowPluginFramework {
 		$this->defaults = array(
 			'hide_advanced_settings' => true,
 			'menu_format_version' => 0,
-			'display_survey_notice' => false,
+			'display_survey_notice' => true,
+			'first_install_time' => null,
 		);
 		$this->serialize_with_json = false; //(Don't) store the options in JSON format
 
@@ -109,6 +112,18 @@ class WPMenuEditor extends MenuEd_ShadowPluginFramework {
 		add_action('plugins_loaded', array($this, 'capture_request_vars'));
 
 		add_action('admin_enqueue_scripts', array($this, 'enqueue_menu_fix_script'));
+
+		//User survey
+		add_action('admin_notices', array($this, 'display_survey_notice'));
+	}
+
+	function init_finish() {
+		parent::init_finish();
+
+		if ( !isset($this->options['first_install_time']) ) {
+			$this->options['first_install_time'] = time();
+			$this->save_options();
+		}
 	}
 	
   /**
@@ -122,7 +137,7 @@ class WPMenuEditor extends MenuEd_ShadowPluginFramework {
 		if ( !$this->load_options() ){
 			$this->import_settings();
 		}
-		
+
 		parent::activate();
 	}
 	
@@ -149,18 +164,23 @@ class WPMenuEditor extends MenuEd_ShadowPluginFramework {
    */
 	function enqueue_scripts(){
 		//jQuery JSON plugin
-		wp_enqueue_script('jquery-json', $this->plugin_dir_url.'/js/jquery.json-1.3.js', array('jquery'), '1.3');
+		wp_enqueue_script('jquery-json', plugins_url('js/jquery.json-1.3.js', $this->plugin_file), array('jquery'), '1.3');
 		//jQuery sort plugin
-		wp_enqueue_script('jquery-sort', $this->plugin_dir_url.'/js/jquery.sort.js', array('jquery'));
+		wp_enqueue_script('jquery-sort', plugins_url('js/jquery.sort.js', $this->plugin_file), array('jquery'));
 		//jQuery UI Droppable
 		wp_enqueue_script('jquery-ui-droppable');
+
+		//We use WordPress media uploader to let the user upload custom menu icons (WP 3.5+).
+		if ( function_exists('wp_enqueue_media') ) {
+			wp_enqueue_media();
+		}
 		
 		//Editor's scipts
         wp_enqueue_script(
-			'menu-editor', 
-			$this->plugin_dir_url.'/js/menu-editor.js', 
+			'menu-editor',
+			plugins_url('js/menu-editor.js', $this->plugin_file),
 			array('jquery', 'jquery-ui-sortable', 'jquery-ui-dialog', 'jquery-form'), 
-			'1.1'
+			'20130221'
 		);
 
 		//The editor will need access to some of the plugin data and WP data.
@@ -174,13 +194,28 @@ class WPMenuEditor extends MenuEd_ShadowPluginFramework {
 		);
 	}
 	
+	/**
+	 * Compatibility workaround for Participants Database 1.4.5.2.
+	 *
+	 * Participants Database loads its settings JavaScript on every page in the "Settings" menu,
+	 * not just its own. It doesn't bother to also load the script's dependencies, though, so
+	 * the script crashes *and* it breaks the menu editor by way of collateral damage.
+	 *
+	 * Fix by forcibly removing the offending script from the queue.
+	 */
+	public function dequeue_pd_scripts() {
+		if ( is_plugin_active('participants-database/participants-database.php') ) {
+			wp_dequeue_script('settings_script');
+		}
+	}
+	
   /**
    * Add the editor's CSS file to the page header
    *
    * @return void
    */
 	function enqueue_styles(){
-		wp_enqueue_style('menu-editor-style', $this->plugin_dir_url . '/css/menu-editor.css', array(), '20120626');
+		wp_enqueue_style('menu-editor-style', plugins_url('css/menu-editor.css', $this->plugin_file), array(), '20130221');
 	}
 
   /**
@@ -211,6 +246,9 @@ class WPMenuEditor extends MenuEd_ShadowPluginFramework {
 			//Output our JS & CSS on that page only
 			add_action("admin_print_scripts-$page", array(&$this, 'enqueue_scripts'));
 			add_action("admin_print_styles-$page", array(&$this, 'enqueue_styles'));
+			
+			//Compatibility fix for Participants Database.
+			add_action("admin_print_scripts-$page", array($this, 'dequeue_pd_scripts'));
 			
 			//Make a placeholder for our screen options (hacky)
 			add_meta_box("ws-ame-screen-options", "You should never see this", array(&$this, 'noop'), $page);
@@ -783,11 +821,24 @@ class WPMenuEditor extends MenuEd_ShadowPluginFramework {
 			if ( !empty($topmenu['separator']) && !$first_nonseparator_found ) continue;
 			
 			$first_nonseparator_found = true;
+
+			//Menus that have both a custom icon URL and a "menu-icon-*" class will get two overlapping icons.
+			//Fix this by automatically removing the class. The user can set a custom class attr. to override.
+			if (
+				ameMenuItem::is_default($topmenu, 'css_class')
+				&& !ameMenuItem::is_default($topmenu, 'icon_url')
+				&& !in_array($topmenu['icon_url'], array('', 'none', 'div')) //Skip "no custom icon" icons.
+			) {
+				$new_classes = preg_replace('@\bmenu-icon-[^\s]+\b@', '', $topmenu['defaults']['css_class']);
+				if ( $new_classes !== $topmenu['defaults']['css_class'] ) {
+					$topmenu['css_class'] = $new_classes;
+				}
+			}
 			
 			//Apply defaults & filters
 			$topmenu = $this->apply_defaults($topmenu);
 			$topmenu = $this->apply_menu_filters($topmenu, 'menu');
-			
+
 			//Skip hidden entries
 			if (!empty($topmenu['hidden'])) continue;
 			
@@ -888,7 +939,7 @@ class WPMenuEditor extends MenuEd_ShadowPluginFramework {
 		if ( !$this->current_user_can_edit_menu() ){
 			die("Access denied");
 		}
-		
+
 		$action = isset($this->post['action']) ? $this->post['action'] : (isset($this->get['action']) ? $this->get['action'] : '');
 		do_action('admin_menu_editor_header', $action);
 		
@@ -930,26 +981,6 @@ class WPMenuEditor extends MenuEd_ShadowPluginFramework {
 		if ( !apply_filters('admin_menu_editor_is_pro', false) ){
 			$this->print_upgrade_notice();
 		}
-		
-		//Handle the survey notice
-		if ( isset($this->get['hide_survey_notice']) && !empty($this->get['hide_survey_notice']) ) {
-			$this->options['display_survey_notice'] = false;
-			$this->save_options();
-		}
-				
-		if ( $this->options['display_survey_notice'] ) {
-			$survey_url = 'https://docs.google.com/spreadsheet/viewform?formkey=dDVLOFM4V0JodUVTbWdUMkJtb2ZtZGc6MQ';
-			$hide_url = add_query_arg('hide_survey_notice', 1);
-			printf(
-				'<div class="updated">
-					<p><strong>Help improve this plugin - take the Admin Menu Editor user survey!</strong></p>
-					<p><a href="%s" target="_blank" title="Opens in a new window">Take the survey</a></p>
-					<p><a href="%s">Hide this notice</a></p>
-				</div>',
-				esc_attr($survey_url),
-				esc_attr($hide_url)
-			);
-		}
 ?>
 <div class="wrap">
 <h2>
@@ -982,7 +1013,7 @@ class WPMenuEditor extends MenuEd_ShadowPluginFramework {
 	$custom_menu_js = $this->getMenuAsJS($custom_menu);
 
 	$plugin_url = $this->plugin_dir_url;
-	$images_url = $this->plugin_dir_url . '/images';
+	$images_url = plugins_url('images', $this->plugin_file);
 	
 	//Create a list of all known capabilities and roles. Used for the dropdown list on the access field.
 	$all_capabilities = $this->get_all_capabilities();
@@ -1076,6 +1107,16 @@ class WPMenuEditor extends MenuEd_ShadowPluginFramework {
 	$hint_id = 'ws_sidebar_pro_ad';
 	$show_pro_benefits = !apply_filters('admin_menu_editor_is_pro', false) && (!isset($show_hints[$hint_id]) || $show_hints[$hint_id]);
 	if ( $show_pro_benefits ):
+		$benefit_variations = array(
+			'Simplified, role-based permissions.',
+			'Role-based menu permissions',
+			'Per-role menu permissions',
+		);
+		//Pseudo-randomly select one phrase based on the site URL.
+		$variation_index = hexdec( substr(md5(get_site_url()), -1) ) % count($benefit_variations);
+		$selected_variation = $benefit_variations[$variation_index];
+
+		$pro_version_link = 'http://adminmenueditor.com/upgrade-to-pro/?utm_source=Admin%2BMenu%2BEditor%2Bfree&utm_medium=text_link&utm_content=sidebar_link_bv' . $variation_index . '&utm_campaign=Plugins';
 	?>
 		<div class="clear"></div>
 
@@ -1084,11 +1125,11 @@ class WPMenuEditor extends MenuEd_ShadowPluginFramework {
 			<div class="ws_hint_content">
 				<strong>Upgrade to Pro:</strong>
 				<ul>
-					<li>Menu export & import.</li>
-					<li>Per-role menu permissions.</li>
-					<li>Drag items between menu levels.</li>
+					<li><?php echo $selected_variation; ?></li>
+                    <li>Drag items between menu levels.</li>
+                    <li>Menu export &amp; import.</li>
 				</ul>
-				<a href="http://w-shadow.com/admin-menu-editor-pro/upgrade-to-pro/?utm_source=Admin%2BMenu%2BEditor%2Bfree&utm_medium=text_link&utm_content=sidebar_link&utm_campaign=Plugins" target="_blank">Learn more</a>
+				<a href="<?php echo esc_attr($pro_version_link); ?>" target="_blank">Learn more</a>
 			</div>
 		</div>
 	<?php
@@ -1157,6 +1198,55 @@ class WPMenuEditor extends MenuEd_ShadowPluginFramework {
  	$pageSelector[] = '</select>';
  	echo implode("\n", $pageSelector);
 ?>
+
+<!-- Menu icon selector widget -->
+<div id="ws_icon_selector" style="display: none;">
+	<?php
+	//Let the user select a custom icon via the media uploader.
+	//We only support the new WP 3.5+ media API. Hence the function_exists() check.
+	if ( function_exists('wp_enqueue_media') ):
+	?>
+		<input type="button" class="button"
+		   id="ws_choose_icon_from_media"
+		   title="Upload an image or choose one from your media library"
+		   value="Choose Icon">
+		<div class="clear"></div>
+	<?php
+	endif;
+	?>
+
+	<?php
+	$defaultWpIcons = array(
+		'generic', 'dashboard', 'post', 'media', 'links', 'page', 'comments',
+		'appearance', 'plugins', 'users', 'tools', 'settings', 'site',
+	);
+	foreach($defaultWpIcons as $icon) {
+		printf(
+			'<div class="ws_icon_option" title="%1$s" data-icon-class="menu-icon-%2$s">
+				<div class="ws_icon_image icon16 icon-%2$s"><br></div>
+			</div>',
+			esc_attr(ucwords($icon)),
+			$icon
+		);
+	}
+
+	$defaultIconImages = array(
+		'images/generic.png',
+	);
+	foreach($defaultIconImages as $icon) {
+		printf(
+			'<div class="ws_icon_option" data-icon-url="%1$s">
+				<img src="%1$s">
+			</div>',
+			esc_attr($icon)
+		);
+	}
+	?>
+	<div class="ws_icon_option ws_custom_image_icon" title="Custom image" style="display: none;">
+		<img src="<?php echo esc_attr(admin_url('images/loading.gif')); ?>" alt="Custom image">
+	</div>
+	<div class="clear"></div>
+</div>
 
 <span id="ws-ame-screen-meta-contents" style="display:none;">
 <label for="ws-hide-advanced-settings">
@@ -1279,7 +1369,7 @@ window.wsMenuEditorPro = false; //Will be overwritten if extras are loaded
 		(function($){
 			$('#screen-meta-links').append(
 				'<div id="ws-pro-version-notice">' +
-					'<a href="http://w-shadow.com/admin-menu-editor-pro/?utm_source=Admin%2BMenu%2BEditor%2Bfree&utm_medium=text_link&utm_content=top_upgrade_link&utm_campaign=Plugins" id="ws-pro-version-notice-link" class="show-settings" target="_blank" title="View Pro version details">Upgrade to Pro</a>' +
+					'<a href="http://adminmenueditor.com/?utm_source=Admin%2BMenu%2BEditor%2Bfree&utm_medium=text_link&utm_content=top_upgrade_link&utm_campaign=Plugins" id="ws-pro-version-notice-link" class="show-settings" target="_blank" title="View Pro version details">Upgrade to Pro</a>' +
 				'</div>'
 			);
 		})(jQuery);
@@ -1347,9 +1437,9 @@ window.wsMenuEditorPro = false; //Will be overwritten if extras are loaded
 	public function enqueue_menu_fix_script() {
 		wp_enqueue_script(
 			'ame-menu-fix',
-			$this->plugin_dir_url . '/js/menu-highlight-fix.js',
+			plugins_url('js/menu-highlight-fix.js', $this->plugin_file),
 			array('jquery'),
-			'20120519',
+			'20120915',
 			true
 		);
 	}
@@ -1361,6 +1451,46 @@ window.wsMenuEditorPro = false; //Will be overwritten if extras are loaded
 	 */
 	function noop(){
 		//nihil
+	}
+
+	public function display_survey_notice() {
+		//Handle the survey notice
+		$hide_param_name = 'ame_hide_survey_notice';
+		if ( isset($this->get[$hide_param_name]) ) {
+			$this->options['display_survey_notice'] = empty($this->get[$hide_param_name]);
+			$this->save_options();
+		}
+
+		$display_notice = $this->options['display_survey_notice'] && $this->current_user_can_edit_menu();
+		if ( isset($this->options['first_install_time']) ) {
+			$minimum_usage_period = 3*24*3600;
+			$display_notice = $display_notice && ((time() - $this->options['first_install_time']) > $minimum_usage_period);
+		}
+
+		//Only display the notice on the Menu Editor page.
+		$display_notice = $display_notice && isset($this->get['page']) && ($this->get['page'] == 'menu_editor');
+
+		if ( $display_notice ) {
+			$free_survey_url = 'https://docs.google.com/spreadsheet/viewform?formkey=dERyeDk0OWhlbkxYcEY4QTNaMnlTQUE6MQ';
+			$pro_survey_url =  'https://docs.google.com/spreadsheet/viewform?formkey=dHl4MnlHaVI3NE5JdVFDWG01SkRKTWc6MA';
+
+			if ( apply_filters('admin_menu_editor_is_pro', false) ) {
+				$survey_url = $pro_survey_url;
+			} else {
+				$survey_url = $free_survey_url;
+			}
+
+			$hide_url = add_query_arg($hide_param_name, 1);
+			printf(
+				'<div class="updated">
+					<p><strong>Help improve Admin Menu Editor - take the user survey!</strong></p>
+					<p><a href="%s" target="_blank" title="Opens in a new window">Take the survey</a></p>
+					<p><a href="%s">Hide this notice</a></p>
+				</div>',
+				esc_attr($survey_url),
+				esc_attr($hide_url)
+			);
+		}
 	}
 
 	/**

@@ -74,7 +74,7 @@
 }
 #shopp ul.products li .price {
   margin-top: 0;
-  margin-bottom: 0;
+  margin-bottom: 10px;
 }
 #shopp ul.products li .details { float: none; }
 #shopp ul.products li .name { min-height: 46px; }

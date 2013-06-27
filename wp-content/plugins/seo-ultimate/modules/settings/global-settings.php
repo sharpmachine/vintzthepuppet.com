@@ -20,8 +20,8 @@ class SU_GlobalSettings extends SU_Module {
 	function get_default_settings() {
 		return array(
 			  'attribution_link' => false
-			, 'plugin_notices' => true
 			, 'mark_code' => true
+			, 'wp_ultimate' => true
 		);
 	}
 	
@@ -35,14 +35,19 @@ class SU_GlobalSettings extends SU_Module {
 	
 	function admin_page_contents() {
 		
-		//Plugin Settings
 		$this->admin_form_start();
-		$this->checkboxes(array(
-			  'attribution_link' => __('Enable nofollow&#8217;d attribution link', 'seo-ultimate')
-			, 'attribution_link_css' => __('Enable attribution link CSS styling', 'seo-ultimate')
-			, 'plugin_notices' => __('Notify me about unnecessary active plugins', 'seo-ultimate')
-			, 'mark_code' => __('Insert comments around HTML code insertions', 'seo-ultimate')
-		));
+		
+		$checkboxes = array(
+			  'mark_code' => __('Identify the plugin&#8217;s HTML code insertions with HTML comment tags', 'seo-ultimate')
+			, 'attribution_link' => __('Enable nofollow&#8217;d attribution link on my site', 'seo-ultimate')
+			, 'attribution_link_css' => array('description' => __('Add CSS styles to the attribution link', 'seo-ultimate'), 'indent' => true)
+		);
+		
+		if ($this->plugin->is_wp_ultimate_promo_applicable())
+			$checkboxes['wp_ultimate'] = __('Show the promo image for WP Ultimate on the Module Manager page', 'seo-ultimate');
+		
+		$this->checkboxes($checkboxes);
+		
 		$this->admin_form_end();
 	}
 	

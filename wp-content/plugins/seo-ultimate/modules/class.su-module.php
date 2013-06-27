@@ -16,7 +16,7 @@ class SU_Module {
 	var $module_key;
 	
 	/**
-	 * Stores the parent module if applicable.
+	 * Stores the parent module (an SU_Module object) if this module has a parent.
 	 * 
 	 * @since 1.5
 	 * @var SU_Module
@@ -24,7 +24,7 @@ class SU_Module {
 	var $parent_module = null;
 	
 	/**
-	 * Stores any child modules.
+	 * Stores any child modules as an array of SU_Module objects.
 	 * 
 	 * @since 1.5
 	 * @var array
@@ -327,13 +327,14 @@ class SU_Module {
 	
 	/**
 	 * Called under 3 circumstances:
-	 * 1. When the SEO Ultimate plugin is activated
+	 * 1. When the SEO Ultimate plugin is activated (not necessarily for the first time)
 	 * 2. When a module is newly registered in the database, which can happen for two reasons:
-	 * 		a. The plugin is activated for the first time
+	 * 		a. The plugin is activated *for the first time*
 	 * 		b. The module has been newly added via a plugin upgrade
 	 * 3. When the module is re-enabled in the Module Manager after being disabled.
 	 * 
 	 * Note that this function will be called twice when the plugin is activated for the first time, since this will make #1 and #2 both true.
+	 * If the plugin is deactivated and then reactivated, only #1 will be true.
 	 * 
 	 * WARNING: Do not use "$this" in the activate() function. It will not work under condition #3. Check for isset($this) and if false, use self:: instead.
 	 * 
@@ -401,11 +402,12 @@ class SU_Module {
 	}
 	
 	/**
+	 * Called at WordPress's load-{page} hook for this module's admin page.
+	 * 
 	 * @since 7.0
 	 */
 	function load_hook() {
-		if (method_exists('WP_Screen', 'add_help_tab'))
-			$this->add_help_tabs(get_current_screen());
+		$this->add_help_tabs(get_current_screen());
 	}
 	
 	/**
@@ -458,7 +460,8 @@ class SU_Module {
 		if ($this->module_key)
 			return $this->module_key;
 		else
-			die(str_rot13('Zbqhyr ybnqrq sebz na rkgreany fbhepr!'));
+			//This error will only be triggered if someone has seriously messed with the plugin architecture
+			die("An SEO Ultimate module did not initialize properly. Perhaps you're trying to load an SEO Ultimate module independent of the plugin?");
 	}
 	
 	/**
@@ -473,7 +476,11 @@ class SU_Module {
 	}
 	
 	/**
+	 * Returns true only if this module has a parent AND that parent is enabled.
+	 * 
 	 * @since 7.0
+	 * 
+	 * @return bool
 	 */
 	function has_enabled_parent() {
 		return (strlen($p = $this->get_parent_module()) && $this->plugin->module_exists($p));
@@ -483,9 +490,6 @@ class SU_Module {
 	 * Returns the absolute URL of the module's admin page.
 	 * 
 	 * @since 0.7
-	 * @uses get_parent_module()
-	 * @uses get_module_key()
-	 * @uses SEO_Ultimate::key_to_hook()
 	 * 
 	 * @param string|false $key The key of the module for which to generate the admin URL. Optional.
 	 * @return string The absolute URL to the admin page.
@@ -778,32 +782,6 @@ class SU_Module {
 	}
 	
 	/**
-	 * Adds 1 to the value of an integer setting in the module's settings array.
-	 * 
-	 * @since 0.1
-	 * @uses get_setting()
-	 * @uses update_setting()
-	 * 
-	 * @param string $key The key of the setting to be incremented.
-	 */
-	function increment_setting($key) {
-		$value = $this->get_setting($key);
-		$this->update_setting($key, $value+1);
-	}
-	
-	/**
-	 * Assigns a value of zero to a setting in the module's settings array.
-	 * 
-	 * @since 0.1
-	 * @uses update_setting()
-	 * 
-	 * @param string $key The key of the setting to be reset.
-	 */
-	function reset_setting($key) {
-		$this->update_setting($key, 0);
-	}
-	
-	/**
 	 * Gets a setting's value, deletes the setting, and returns the value.
 	 * 
 	 * @since 2.1
@@ -835,24 +813,13 @@ class SU_Module {
 		$msdata = (array)get_option("seo_ultimate_module_$module", array());
 		
 		if (isset($msdata[$key])) {
-			if ($array_key)
-				unset($msdata[$key][$array_key]);
-			else
+			if ($array_key) {
+				if (isset($msdata[$key][$array_key]))
+					unset($msdata[$key][$array_key]);
+			} else {
 				unset($msdata[$key]);
+			}
 		}
-	}
-	
-	/**
-	 * Updates the value of more than one setting at a time.
-	 * 
-	 * @since 0.1
-	 * @uses update_setting()
-	 * 
-	 * @param array $settings The names (keys) and values of settings to be updated.
-	 */
-	function update_settings($settings) {
-		foreach ($settings as $key => $value)
-			update_setting($key, $value, null, null);
 	}
 	
 	/**
@@ -953,63 +920,12 @@ class SU_Module {
 	 * Outputs a tab control and loads the current tab.
 	 * 
 	 * @since 0.7
-	 * @uses get_admin_url()
-	 * @uses SEO_Ultimate::plugin_dir_url
 	 * 
 	 * @param array $tabs Array (id => __, title => __, callback => __)
 	 * @param bool $table Whether or not the tab contents should be wrapped in a form table.
 	 */
-	function admin_page_tabs($tabs = array(), $table=false) {
-		
-		if ($c = count($tabs)) {
-			
-			if ($c > 1)
-				echo "\n\n<div id='su-tabset' class='su-tabs'>\n";
-			
-			foreach ($tabs as $tab) {
-				
-				if (isset($tab['title']))	$title	  = $tab['title'];	  else return;
-				if (isset($tab['id']))		$id		  = $tab['id'];		  else return;
-				if (isset($tab['callback']))$function = $tab['callback']; else return;
-				
-				if ($c > 1) {
-					//$id = 'su-' . sustr::preg_filter('a-z0-9', strtolower($title));
-					echo "<fieldset id='$id'>\n<h3>$title</h3>\n<div class='su-tab-contents'>\n";
-				}
-				
-				if ($table) echo "<table class='form-table'>\n";
-				
-				$call = $args = array();
-				
-				if (is_array($function)) {
-					
-					if (is_array($function[0])) {
-						$call = array_shift($function);
-						$args = $function;
-					} elseif (is_string($function[0])) {
-						$call = array_shift($function);
-						$call = array(&$this, $call);
-						$args = $function;
-					} else {
-						$call = $function;
-					}
-				} else {
-					$call = array(&$this, $function);
-				}
-				if (is_callable($call)) call_user_func_array($call, $args);
-				
-				if ($table) echo "</table>";
-				
-				if ($c > 1)
-					echo "</div>\n</fieldset>\n";
-			}
-			
-			if ($c > 1) {
-				echo "</div>\n";
-				
-				echo '<script type="text/javascript" src="'.$this->plugin->plugin_dir_url.'includes/tabs.js?v='.SU_VERSION.'"></script>';
-			}
-		}
+	function admin_page_tabs($tabs=array(), $table=false) {
+		$this->plugin->tabs($tabs, $table, $this);
 	}
 	
 	/**
@@ -1077,12 +993,12 @@ class SU_Module {
 	 */
 	function get_postmeta_edit_tabs($fields) {
 		
-		$types = suwp::get_post_type_objects();
+		$types = get_post_types(array('public' => true), 'objects');
 		
 		//Turn the types array into a tabs array
 		$tabs = array();
 		foreach ($types as $type)
-			$tabs[] = array(
+			$tabs[$type->name] = array(
 				  'title' => $type->labels->name
 				, 'id' => 'su-' . $type->name
 				, 'callback' => array('meta_edit_tab', 'post', 'su-' . $type->name, $type->name, $type->labels->singular_name, $fields)
@@ -1176,6 +1092,7 @@ class SU_Module {
 				wp(array(
 					  'post_type' => $type
 					, 'posts_per_page' => $per_page
+					, 'post_status' => 'any'
 					, 'paged' => $pagenum
 					, 'order' => 'ASC'
 					, 'orderby' => 'title'
@@ -1250,6 +1167,18 @@ class SU_Module {
 					$name = $object->post_title;
 					$view_url = get_permalink($id);
 					$edit_url = get_edit_post_link($id);
+					
+					$status_obj = get_post_status_object($object->post_status);
+					switch ($object->post_status) {
+						case 'publish': $status = ''; break;
+						case 'inherit': $status = ''; break;
+						case 'auto-draft': continue; break;
+						default: $status = $status_obj->label; break;
+					}
+					
+					if ($status)
+						$name .= "<span class='su-meta-table-post-status'> &mdash; $status</span>";
+					
 					break;
 				case 'term':
 					$id = intval($object->term_id);
@@ -1586,55 +1515,6 @@ class SU_Module {
 	}
 	
 	/**
-	 * Outputs a <tr> tag with <td> children, and consolidates adjacent, identical <td> elements with the rowspan attribute.
-	 * 
-	 * @since 2.9
-	 */
-	function table_rows_consolidated($rows, $cols_to_consolidate = 999) {
-		$mk = $this->get_module_key();
-		
-		$rowspans = array();
-		
-		//Cycle through each row
-		foreach ($rows as $rowid => $row) {
-			
-			echo "<tr>";
-			
-			//Cycle through the row's cells
-			$cellid = 0;
-			foreach ($row as $class => $cell) {
-				
-				//If a rowspan is already in process for this cell...
-				if ($rowspans[$cellid] > 1)
-					$rowspans[$cellid]--;
-				else {
-					
-					//Find out if we should start a rowspan
-					$rowspanhtml = '';
-					if ($cellid < $cols_to_consolidate) {
-						$rowspan = 1;
-						for ($larowid = $rowid+1; $larowid < count($rows); $larowid++) {
-							$lacell = $rows[$larowid][$class];
-							if (strlen($lacell) && $cell == $lacell) $rowspan++; else break;
-						}
-						
-						if ($rowspan > 1) {
-							$rowspans[$cellid] = $rowspan;
-							$rowspanhtml = " rowspan='$rowspan'";
-						}
-					}
-					
-					echo "<td class='su-$mk-$class'$rowspanhtml>$cell</td>";
-				}
-				
-				$cellid++;
-			}
-			
-			echo "</tr>";
-		}
-	}
-	
-	/**
 	 * Ends a "widefat" WordPress table.
 	 * 
 	 * @since 1.8
@@ -1678,22 +1558,6 @@ class SU_Module {
 	}
 	
 	/**
-	 * Applies the necessary HTML so that certain content is displayed only when the mouse hovers over the including table row.
-	 * 
-	 * @since 0.1
-	 * 
-	 * @param string $text The always-visible text.
-	 * @param string $hovertext The text that only displays upon row hover.
-	 * @return string The HTML to put in a hover-supporting table row.
-	 */
-	function hover_row($text, $hovertext, $inline = false) {
-		if ($inline)
-			return "<span>$text</span>\n<span class='row-actions'> &mdash; $hovertext</span>";
-		else
-			return "<div>$text</div>\n<div class='row-actions'>$hovertext</div>";
-	}
-	
-	/**
 	 * Outputs a text block into an admin form.
 	 * 
 	 * @since 1.5
@@ -1728,13 +1592,20 @@ class SU_Module {
 		if ($this->is_action('update')) {
 			foreach ($checkboxes as $name => $desc) {
 				$new_value = isset($_POST[$name]) ? ($_POST[$name] == '1') : false;
-				$this->update_setting($name, $new_value);
 				
-				if (is_array($desc)) $desc = isset($desc['description']) ? $desc['description'] : '';
+				if (is_array($desc)) {
+					$disabled = isset($desc['disabled']) ? $desc['disabled'] : false;
+					$desc = isset($desc['description']) ? $desc['description'] : '';
+				} else {
+					$disabled = false;
+				}
+				
+				if (!$disabled)
+					$this->update_setting($name, $new_value);
 				
 				if (strpos($desc, '%d') !== false) {
 					$name .= '_value';
-					$this->update_setting($name, intval($_POST[$name]));
+					$this->update_setting($name, sustr::to_int($_POST[$name]));
 				}
 			}
 		}
@@ -1749,28 +1620,33 @@ class SU_Module {
 				
 				if (is_array($desc)) {
 					$indent = isset($desc['indent']) ? $desc['indent'] : false;
+					$disabled = isset($desc['disabled']) ? $desc['disabled'] : false;
+					$checked = isset($desc['checked']) ? $desc['checked'] : null;
 					$desc = $desc['description'];
 				} else {
 					$indent = false;
+					$disabled = false;
+					$checked = null;
 				}
 				
-				register_setting($this->get_module_key(), $name, 'intval');
+				register_setting($this->get_module_key(), $name, array('sustr', 'to_int'));
 				$name = su_esc_attr($name);
 				
 				if (strpos($desc, '%d') === false) {
 					$onclick = '';
 				} else {
 					$int_var_name = $name.'_value';
-					$int_var_value = intval($this->get_setting($int_var_name));
-					if ($this->get_setting($name) === true) $disabled = ''; else $disabled = "readonly='readonly' ";
-					$desc = str_replace('%d', "</label><input name='$int_var_name' id='$int_var_name' type='text' value='$int_var_value' size='2' maxlength='3' $disabled/><label for='$name'>", $desc);
+					$int_var_value = sustr::to_int($this->get_setting($int_var_name));
+					if ($this->get_setting($name) === true) $sfdisabled = ''; else $sfdisabled = "readonly='readonly' ";
+					$desc = str_replace('%d', "</label><input name='$int_var_name' id='$int_var_name' type='text' value='$int_var_value' size='2' maxlength='3' $sfdisabled/><label for='$name'>", $desc);
 					$desc = str_replace("<label for='$name'></label>", '', $desc);
 					$onclick = " onclick=\"javascript:document.getElementById('$int_var_name').readOnly=!this.checked;\"";
 				}
 				
 				if ($indent) $labelclass = " class='su-indent'"; else $labelclass = '';
 				echo "<label for='$name'$labelclass><input name='$name' id='$name' type='checkbox' value='1'";
-				if ($this->get_setting($name) === true) echo " checked='checked'";
+				if ($checked !== false && ($checked === true || $this->get_setting($name) === true)) echo " checked='checked'";
+				if ($disabled) echo " disabled='disabled'";
 				echo "$onclick /> $desc</label><br />\n";
 			}
 		}
@@ -1848,27 +1724,12 @@ class SU_Module {
 				echo " /> $label";
 				
 				if (!sustr::has($label, '</label>')) echo '</label>';
-				//if (!sustr::has($desc,  '</label>')) echo '<br />';
 				echo "</div>\n";
 			}
 		}
 		
 		if ($grouptext) echo "</fieldset>";
 		echo "</td>\n</tr>\n";
-	}
-	
-	/**
-	 * Outputs a single radio button into an admin form and saves the set's value into the database after form submission.
-	 * 
-	 * @since 3.0
-	 * @uses radiobuttons()
-	 * 
-	 * @param string $name The name of the set of radio buttons.
-	 * @param string $value The value of this radio button.
-	 * @param string $label The label for this radio button.
-	 */
-	function radiobutton($name, $value, $label) {
-		$this->radiobuttons($name, array($value => $label));
 	}
 	
 	/**
@@ -1887,7 +1748,9 @@ class SU_Module {
 	 * @param string|false $grouptext The text to display in a table cell to the left of the one containing the dropdown. Optional.
 	 * @param string $text A printf-style format string in which "%s" is replaced with the dropdown. Use this to put text before or after the dropdown.
 	 */
-	function dropdown($name, $values, $grouptext=false, $text='%s') {
+	function dropdown($name, $values, $grouptext=false, $text='%s', $args=array()) {
+		
+		$in_table = isset($args['in_table']) ? $args['in_table'] : true;
 		
 		//Save dropdown setting after form submission
 		if ($this->is_action('update') && isset($_POST[$name]))
@@ -1895,7 +1758,7 @@ class SU_Module {
 		
 		if ($grouptext)
 			$this->admin_form_group_start($grouptext, false);
-		else
+		elseif ($in_table)
 			echo "<tr valign='top' class='su-admin-form-dropdown'>\n<td colspan='2'>\n";
 		
 		if (is_array($values)) {
@@ -1909,8 +1772,10 @@ class SU_Module {
 			printf($text, $dropdown);
 		}
 		
-		if ($grouptext) echo "</fieldset>";
-		echo "</td>\n</tr>\n";
+		if ($grouptext)
+			$this->admin_form_group_end();
+		elseif ($in_table)
+			echo "</td>\n</tr>\n";
 	}
 	
 	/**
@@ -1922,22 +1787,26 @@ class SU_Module {
 		
 		if (preg_match($pattern, $label, $matches)) {
 			$is_int_field = ($matches[1] == 'd');
-			$sfname = $matches[3];
-			if (!$sfname) $sfname = $name.'_value';
+			$sfname = $name.'_value';
 			
-			if ($this->is_action('update')) {
+			if (isset($matches[3]))
+				$sfname = $matches[3];
+			
+			if ($this->is_action('update'))
 				$sfvalue = stripslashes($_POST[$sfname]);
-				if ($is_int_field) $sfvalue = intval($sfvalue);
-				$this->update_setting($sfname, $sfvalue);
-			} else {
+			else
 				$sfvalue = $this->get_setting($sfname);
-				if ($is_int_field) $sfvalue = intval($sfvalue);
-			}
+			
+			if ($is_int_field)
+				$sfvalue = sustr::to_int($sfvalue);
+			
+			if ($this->is_action('update'))
+				$this->update_setting($sfname, $sfvalue);
 			
 			if ($enabled) $disabled = ''; else $disabled = " readonly='readonly'";
 			
 			$esfvalue = su_esc_attr($sfvalue);
-			$field_html = "</label><input class='regular-text textbox subfield' name='$sfname' id='$sfname' type='text' value='$esfvalue'$disabled";
+			$field_html = "</label><input class='textbox subfield' name='$sfname' id='$sfname' type='text' value='$esfvalue'$disabled";
 			if ($is_int_field) $field_html .= " size='2' maxlength='3'";
 			$field_html .= " /><label for='$name'>";
 			
@@ -2000,6 +1869,7 @@ class SU_Module {
 			
 			$before = isset($textbox_args[$id]['before']) ? $textbox_args[$id]['before'] : '';
 			$after  = isset($textbox_args[$id]['after'])  ? $textbox_args[$id]['after']  : '';
+			$placeholder = isset($textbox_args[$id]['placeholder']) ? $textbox_args[$id]['placeholder']  : '';
 			
 			register_setting($this->get_module_key(), $id);
 			$value = su_esc_editable_html($this->get_setting($id));
@@ -2016,6 +1886,11 @@ class SU_Module {
 			echo $before;
 			
 			echo "<input name='$id' id='$id' type='text' value='$value' class='regular-text' ";
+			
+			if ($placeholder) {
+				$a_placeholder = su_esc_attr($placeholder);
+				echo "placeholder='$placeholder' ";
+			}
 			
 			if ($disabled)
 				echo "disabled='disabled' />";
@@ -2062,9 +1937,9 @@ class SU_Module {
 	 * @param string|false $default The default textbox value. Setting this will trigger a "Reset" link. Optional.
 	 * @return string The HTML that would render the textbox.
 	 */
-	function textbox($id, $title, $default=false, $grouptext=false, $args=array()) {
+	function textbox($id, $title, $default=false, $grouptext=false, $args=array(), $textbox_args=array()) {
 		if ($default === false) $default = array(); else $default = array($id => $default);
-		$this->textboxes(array($id => $title), $default, $grouptext, $args);
+		$this->textboxes(array($id => $title), $default, $grouptext, $args, array($id => $textbox_args));
 	}
 	
 	/**
@@ -2157,7 +2032,7 @@ class SU_Module {
 			echo "<tr valign='top'>\n";
 			if ($title) echo "<th scope='row'><label for='$id'>$title</label></th>\n";
 			echo "<td>";
-			echo $this->get_jlsuggest_box($id, $this->get_setting($id));
+			echo $this->get_jlsuggest_box($id, $this->get_setting($id), $params);
 			echo "</td>\n</tr>\n";
 		}
 	}
@@ -2376,19 +2251,35 @@ class SU_Module {
 	 * @param array $textboxes An array of textboxes. (Field/setting IDs are the keys, and descriptions are the values.)
 	 * @return string The HTML that would render the textboxes.
 	 */
-	function get_postmeta_textboxes($textboxes) {
-
+	function get_postmeta_textboxes($textboxes, $textbox_args=array(), $grouptext=false) {
+		
 		$html = '';
 		
+		if ($grouptext) {
+			$h_grouptext = esc_html($grouptext);
+			$html .= "<tr class='su textbox' valign='top'>\n<th scope='row' class='su'><label>$h_grouptext</label></th>\n<td class='su group'><table>";
+		}
+		
 		foreach ($textboxes as $id => $title) {
+			
+			$type = isset($textbox_args[$id]['type']) ? $textbox_args[$id]['type'] : 'text';
 			
 			register_setting('seo-ultimate', $id);
 			$value = su_esc_editable_html($this->get_postmeta($id));
 			$id = "_su_".su_esc_attr($id);
-			//$title = str_replace(' ', '&nbsp;', $title);
 			
-			$html .= "<tr class='su textbox' valign='middle'>\n<th scope='row' class='su'><label for='$id'>$title</label></th>\n"
-					."<td class='su'><input name='$id' id='$id' type='text' value='$value' class='regular-text' tabindex='2' /></td>\n</tr>\n";
+			$e_title = su_esc_attr($title);
+			
+			if ($grouptext)
+				$html .= "<tr><th scope='row'>$title</th><td><input name='$id' id='$id' type='$type' value='$value' class='regular-text' tabindex='2' /></td></tr>";
+			else
+				$html .= "<tr class='su textbox' valign='middle'>\n<th scope='row' class='su'><label for='$id'>$title</label></th>\n"
+						."<td class='su'><input name='$id' id='$id' type='$type' value='$value' class='regular-text' tabindex='2' /></td>\n</tr>\n";
+		}
+		
+		if ($grouptext) {
+			$h_grouptext = esc_html($grouptext);
+			$html .= "</table></td>\n</tr>\n";
 		}
 		
 		return $html;
@@ -2404,8 +2295,8 @@ class SU_Module {
 	 * @param string $title The label of the HTML element.
 	 * @return string The HTML that would render the textbox.
 	 */
-	function get_postmeta_textbox($id, $title) {
-		return $this->get_postmeta_textboxes(array($id => $title));
+	function get_postmeta_textbox($id, $title, $args=array()) {
+		return $this->get_postmeta_textboxes(array($id => $title), array($id => $args));
 	}
 	
 	/**
@@ -2460,7 +2351,7 @@ class SU_Module {
 	 */
 	function get_postmeta_checkboxes($checkboxes, $grouptext) {
 		
-		$valign = (is_array($checkboxes) && count($checkboxes)) ? 'top' : 'middle';
+		$valign = (is_array($checkboxes) && count($checkboxes) > 1) ? 'top' : 'middle';
 		$html = "<tr class='su checkboxes' valign='$valign'>\n<th scope='row' class='su'>$grouptext</th>\n<td class='su'><fieldset><legend class='hidden'>$grouptext</legend>\n";
 		
 		if (is_array($checkboxes)) {
@@ -2607,7 +2498,7 @@ class SU_Module {
 		
 		global $wp_query;
 		
-		if (!$id && (is_category() || is_tag() || is_tax()))
+		if (!$id && suwp::is_tax())
 			$id = $wp_query->get_queried_object_id();
 		
 		if (!$id)

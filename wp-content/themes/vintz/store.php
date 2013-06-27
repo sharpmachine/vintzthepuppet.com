@@ -41,7 +41,7 @@
 <?php endwhile; ?>
 <div class="clear"></div>
 <div class="seth">
-	<a href="http://store.ibethel.org/index.php?manufacturers_id=63" class="button">See all Seth's products</a>
+	<a href="http://store.ibethel.org/index.php?browse_authors_id=150&ref=57" class="button">See all Seth's products</a>
 </div>
 <?php else: ?>
 	<!-- no posts found -->

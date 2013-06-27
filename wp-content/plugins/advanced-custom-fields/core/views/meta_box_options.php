@@ -13,7 +13,7 @@ global $post;
 
 	
 // vars
-$options = $this->parent->get_acf_options($post->ID);
+$options =  apply_filters('acf/field_group/get_options', array(), $post->ID);
 	
 
 ?>
@@ -21,12 +21,12 @@ $options = $this->parent->get_acf_options($post->ID);
 	<tr>
 		<td class="label">
 			<label for=""><?php _e("Order No.",'acf'); ?></label>
-			<p class="description"><?php _e("Field groups are created in order <br />from lowest to highest.",'acf'); ?></p>
+			<p class="description"><?php _e("Field groups are created in order <br />from lowest to highest",'acf'); ?></p>
 		</td>
 		<td>
 			<?php 
 			
-			$this->parent->create_field(array(
+			do_action('acf/create_field', array(
 				'type'	=>	'text',
 				'name'	=>	'menu_order',
 				'value'	=>	$post->menu_order,
@@ -42,7 +42,7 @@ $options = $this->parent->get_acf_options($post->ID);
 		<td>
 			<?php 
 			
-			$this->parent->create_field(array(
+			do_action('acf/create_field', array(
 				'type'	=>	'radio',
 				'name'	=>	'options[position]',
 				'value'	=>	$options['position'],
@@ -62,13 +62,13 @@ $options = $this->parent->get_acf_options($post->ID);
 		<td>
 			<?php 
 			
-			$this->parent->create_field(array(
+			do_action('acf/create_field', array(
 				'type'	=>	'radio',
 				'name'	=>	'options[layout]',
 				'value'	=>	$options['layout'],
 				'choices' => array(
-					'default'	=>	__("Standard Metabox",'acf'),
 					'no_box'	=>	__("No Metabox",'acf'),
+					'default'	=>	__("Standard Metabox",'acf'),
 				)
 			));
 			
@@ -84,7 +84,7 @@ $options = $this->parent->get_acf_options($post->ID);
 		<td>
 			<?php 
 			
-			$this->parent->create_field(array(
+			do_action('acf/create_field', array(
 				'type'	=>	'checkbox',
 				'name'	=>	'options[hide_on_screen]',
 				'value'	=>	$options['hide_on_screen'],
@@ -94,10 +94,14 @@ $options = $this->parent->get_acf_options($post->ID);
 					'custom_fields'		=>	__("Custom Fields"),
 					'discussion'		=>	__("Discussion"),
 					'comments'			=>	__("Comments"),
+					'revisions'			=>	__("Revisions"),
 					'slug'				=>	__("Slug"),
 					'author'			=>	__("Author"),
 					'format'			=>	__("Format"),
-					'featured_image'	=>	__("Featured Image")
+					'featured_image'	=>	__("Featured Image"),
+					'categories'		=>	__("Categories"),
+					'tags'				=>	__("Tags"),
+					'send-trackbacks'	=>	__("Send Trackbacks"),
 				)
 			));
 			
